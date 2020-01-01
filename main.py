@@ -48,20 +48,26 @@ states_padded = np.array(states_padded)
 
 
 '''Get model'''
-trans = Transformer(len_limit=50, time_limit=50, layers=1, n_head=1, d_data=16, d_model=16)
+trans = Transformer(len_limit=50, time_limit=50, layers=2, n_head=2, d_data=16, d_model=32)
 lr_scheduler = LRSchedulerPerStep(trans.d_model, 4000) 
 # model_saver = ModelCheckpoint(mfile, monitor='ppl', save_best_only=True, save_weights_only=True)
 
 trans.compile()
 
 '''Init'''
-trans.init_model_stage_one(X_padded, batch_size = 32)
+trans.init_model_stage_one(X_padded, batch_size = 128)
 
-pred = trans.recon_model.predict(X_padded[:1])
+trans.recon_model.compile(SGD(1e-3))
+trans.recon_model.fit(X_padded, batch_size = 128, epochs=50)
+
+
+
+# pred = trans.recon_model.predict(X_padded[:1])
 
 trans.init_model_stage_two(X_padded)
 
 '''Train'''
+trans.justify_model(lr=1e-3, loss_weights=[1,0,0])
 trans.model.fit(X_padded, batch_size=128, epochs = 50)
 
 trans.model.compile(optimizer=Adam(1e-3), metrics = ['acc'])
