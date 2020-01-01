@@ -7,11 +7,11 @@ from keras.initializers import *
 import tensorflow as tf
 tfe = tf.contrib.eager
 import tensorflow_probability as tfp
-from keras.optimizers import Adam, SGD
+from keras.optimizers import RAdam, SGD
 from keras.losses import mean_squared_error, categorical_crossentropy
 from keras.utils import np_utils
 import keras.regularizers as regularizers
-
+from keras_radam import RAdam
 try:
 	from tqdm import tqdm
 	from dataloader import TokenList, pad_to_longest
@@ -591,7 +591,7 @@ class Transformer:
 				loss = K.mean(loss)
 				return loss # cross entropy has a negative sign
 			else:
-				loss = mean_squared_error(self.enc_output, self.embedding_zt(encoder_sampled_zt))
+				loss = mean_squared_error(self.enc_output, self.mu_zt)
 				loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
 				loss = K.mean(loss)
 
@@ -617,7 +617,7 @@ class Transformer:
 		self.model.add_metric(self.loss2, 'loss2')
 		self.model.add_metric(self.loss3, 'loss3')
 
-		self.model.compile(optimizer= Adam(lr=0.001))
+		self.model.compile(optimizer= RAdam(lr=0.001))
 
 	
 	def justify_model(self, lr = 0.001, loss_weights = [2e-2,1,1]):
@@ -633,7 +633,7 @@ class Transformer:
 		self.model.add_metric(self.loss2, 'loss2')
 		self.model.add_metric(self.loss3, 'loss3')
 
-		self.model.compile(optimizer= Adam(lr = lr))
+		self.model.compile(optimizer= RAdam(lr = lr))
 	
 	def init_model(self, X, active_layers = 999, batch_size = 128):
 		'''
@@ -658,14 +658,14 @@ class Transformer:
 
 		self.recon_model = Model(self.input_xt, init_recon_xt)
 		self.recon_model.add_loss(loss)
-		self.recon_model.compile(Adam(1e-3))
-		self.recon_model.fit(X, batch_size = batch_size, epochs = 30)
-		self.recon_model.compile(Adam(1e-4))
+		self.recon_model.compile(RAdam(1e-3))
+		self.recon_model.fit(X, batch_size = batch_size, epochs = 50)
+		self.recon_model.compile(RAdam(1e-4))
 		self.recon_model.fit(X, batch_size = batch_size, epochs = 50)
 		print('Finish training reconstruction model'+'-'*30)
 
 
-	def init_model_stage_two(self, X, active_layers = 999, batch_size = 128):
+	def init_model_stage_two(self, X, batch_size = 128):
 		'''Step two'''
 
 		print('Start getting hidden space'+'-'*30)
@@ -681,16 +681,16 @@ class Transformer:
 				X_hidden_.append(X_hidden[index,i])
 
 		print('Finish getting hidden space'+'-'*30)
-				
+						
 
 		print('Start KMeans init'+'-'*30)
 		from sklearn.cluster import KMeans
-		kmeans = KMeans(self.num_states, n_jobs = 4, n_init = 3).fit(X_hidden_)
+		self.kmeans = KMeans(self.num_states, n_jobs = 4, n_init = 3).fit(X_hidden_)
 
-		initial_mu = kmeans.cluster_centers_
+		initial_mu = self.kmeans.cluster_centers_
 		self.embedding_zt.set_weights([initial_mu])
 
-		initial_states_ = kmeans.predict(X_hidden_)
+		initial_states_ = self.kmeans.predict(X_hidden_)
 		initial_states = []
 		current_l = 0
 		for index, l in enumerate(lens):
@@ -728,24 +728,34 @@ class Transformer:
 	def init_model_stage_three(self, X, batch_size = 128):
 		'''stage one + stage two'''
 
-		emb = self.mu_zt
-		enc_output = self.encoder(emb, self.enc_mask, active_layers=999)
-		rec_x = self.layer_trans(enc_output)
+		self.stage_three_model = Model(self.input_xt,self.layer_trans(self.mu_zt))
 
-		self.stage_three_model = Model(self.input_xt,rec_x)
+		# Reconstruction loss
+		def get_mse_loss():
+			mask = self.enc_mask
+			loss = mean_squared_error(self.enc_seq, self.stage_three_model.output)
+			loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
+			loss = K.mean(loss)
+			return loss
 
-		mask = self.enc_mask
-		loss = mean_squared_error(self.enc_seq, self.stage_three_model.output)
-		loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
-		loss = K.mean(loss)
+		# quantization loss
+		def get_quantization_loss():
+			mask = self.enc_mask
+			loss = mean_squared_error(self.enc_output, self.mu_zt)
+			loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
+			loss = K.mean(loss)
+			return loss
 
-		self.stage_three_model.add_loss(loss)
-		self.stage_three_model.add_loss(self.loss3)
-		self.stage_three_model.add_metric(loss,'mse')
-		self.stage_three_model.add_metric(self.loss3,'crossentropy')
-		self.stage_three_model.compile(Adam(1e-3))
+		loss1 = get_mse_loss()
+		# loss2 = get_quantization_loss()
 
-		self.stage_three_model.fit(X, batch_size = batch_size, epochs = 10)
+		self.stage_three_model.add_loss(loss1)
+		# self.stage_three_model.add_loss(loss2)
+		self.stage_three_model.add_metric(loss1,'mse')
+		# self.stage_three_model.add_metric(loss2,'quantization')
+		self.stage_three_model.compile(RAdam(1e-3))
+
+		self.stage_three_model.fit(X, batch_size = batch_size, epochs = 50)
 
 	
 

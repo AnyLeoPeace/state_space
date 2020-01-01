@@ -56,15 +56,9 @@ trans.compile()
 
 '''Init'''
 trans.init_model_stage_one(X_padded, batch_size = 128)
+trans.init_model_stage_two(X_padded, batch_size = 128)
+trans.init_model_stage_three(X_padded, batch_size = 128)
 
-trans.recon_model.compile(SGD(1e-3))
-trans.recon_model.fit(X_padded, batch_size = 128, epochs=50)
-
-
-
-# pred = trans.recon_model.predict(X_padded[:1])
-
-trans.init_model_stage_two(X_padded)
 
 '''Train'''
 trans.justify_model(lr=1e-3, loss_weights=[1,0,0])
