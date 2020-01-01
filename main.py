@@ -30,11 +30,16 @@ for item in true_states:
 
 states_padded = np.array(states_padded)
 
-trans = Transformer(len_limit=30, layers=1, n_head=1)
-trans.compile()
 
-trans.model.compile(optimizer='sgd')
+'''Get model'''
+trans = Transformer(len_limit=30, layers=1, n_head=1)
+lr_scheduler = LRSchedulerPerStep(trans.d_model, 4000) 
+# model_saver = ModelCheckpoint(mfile, monitor='ppl', save_best_only=True, save_weights_only=True)
+
+
+trans.compile()
+trans.initial_model(X_padded)
 
 trans.model.fit(X_padded, batch_size=1)
 
-trans.model.predict(X_padded[:1])
+# trans.model.evaluate(X_padded[:1])

@@ -8,6 +8,8 @@ import tensorflow as tf
 tfe = tf.contrib.eager
 import tensorflow_probability as tfp
 from keras.optimizers import Adam, SGD
+from keras.losses import mean_squared_error
+from keras.utils import np_utils
 
 try:
 	from tqdm import tqdm
@@ -396,7 +398,7 @@ repeat_last_layer =  Lambda(lambda x: K.concatenate([x, tf.expand_dims(x[-1], ax
 class Transformer:
 	def __init__(self, i_tokens = None, o_tokens = None, len_limit = 30, time_limit = 30, d_model=16, \
 			  d_inner_hid=16, n_head=4, layers=2, dropout=0.1, \
-			  share_word_emb=False, tem_dim = 0, num_states = 3, d_data = 10):
+			  share_word_emb=False, tem_dim = 0, num_states = 3, d_data = 16):
 		'''
 		Useful:
 			time_limit: This is actually the max time limit (the farthest visit time)
@@ -430,65 +432,66 @@ class Transformer:
 		'''Decoder'''
 		self.d_sigma = self.d_model * self.d_model # Compute sigma through cov
 		self.embedding_zt = Embedding(num_states, d_model, name='zt_embedding')
-		self.embedding_sigma_zt  = Embedding(num_states, self.d_sigma, name='zt_embedding_sigma')
+		# self.embedding_sigma_zt  = Embedding(num_states, self.d_sigma, name='zt_embedding_sigma')
 		self.decoder = Decoder(d_model, d_inner_hid, n_head, layers, dropout)
 
 		'''Prediction functions'''
 		self.dense_zt = TimeDistributed(Dense(self.num_states, kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4), name = 'prediction_zt'))
 		self.dense_mut = TimeDistributed(Dense(d_model, kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4), name = 'prediction_mut')) # should I add some other regularization?
 		# Simga is a matrix with size (d_model, d_model)
-		self.dense_sigmat = TimeDistributed(Dense(self.d_sigma, kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4), name = 'prediction_sigmat'))
+		# self.dense_sigmat = TimeDistributed(Dense(self.d_sigma, kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4), name = 'prediction_sigmat'))
 
 		'''Hidden space transform'''
+		self.layer_trans = Sequential(name='xt_reconstruct')
+		self.layer_trans.add(TimeDistributed(Dense(d_model, activation='relu', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4))))
+		self.layer_trans.add(TimeDistributed(BatchNormalization()))
+		self.layer_trans.add(TimeDistributed(Dense(d_data, activation='relu', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4))))
+		self.layer_trans.add(TimeDistributed(BatchNormalization()))
+
 		# self.layer_trans = Sequential(name='ht_trans')
-		# self.layer_trans.add(TimeDistributed(Dense(d_model, activation='relu', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4))))
-		# self.layer_trans.add(TimeDistributed(BatchNormalization()))
-		# self.layer_trans.add(TimeDistributed(Dense(d_model, activation='relu', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4))))
-		# self.layer_trans.add(TimeDistributed(BatchNormalization()))
+		# self.layer_trans.add(Dense(d_model, activation='relu', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4)))
+		# self.layer_trans.add(BatchNormalization())
+		# self.layer_trans.add(Dense(d_model, activation='relu', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4)))
+		# self.layer_trans.add(BatchNormalization())
 
-		self.layer_trans = Sequential(name='ht_trans')
-		self.layer_trans.add(Dense(d_model, activation='relu', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4)))
-		self.layer_trans.add(BatchNormalization())
-		self.layer_trans.add(Dense(d_model, activation='relu', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4)))
-		self.layer_trans.add(BatchNormalization())
-
-		self.time_distributed_trans = TimeDistributed(self.layer_trans)
+		# self.time_distributed_trans = TimeDistributed(self.layer_trans)
 
 		'''jacobian layer'''
 		# Too Hard!
-		input_to_h = Input(shape = (self.d_model,))
+		# input_to_h = Input(shape = (self.d_model,))
 
-		def get_d_j(input_to_h):
-			print('Calculating Jacobian')
+		# def get_d_j(input_to_h):
+		# 	print('Calculating Jacobian')
 			
-			d_h = self.d_model
-			d_input= K.int_shape(input_to_h)[-1]
-			grads = []
-			#
-			for n in range(0, d_h):
-				grad = Lambda(lambda x: K.gradients(self.layer_trans(x)[:,n], x))(input_to_h)
-				grads.append(grad)
-				print(n+1,'/',d_h)
+		# 	d_h = self.d_model
+		# 	d_input= K.int_shape(input_to_h)[-1]
+		# 	grads = []
+		# 	#
+		# 	for n in range(0, d_h):
+		# 		grad = Lambda(lambda x: K.gradients(self.layer_trans(x)[:,n], x))(input_to_h)
+		# 		grads.append(grad)
+		# 		print(n+1,'/',d_h)
 			
-			grads = tf.reshape(tf.stack(grads), shape=[d_h, d_input])
-			j = grads
-			return tf.matrix_determinant(tf.matmul(j,tf.matrix_transpose(j)))
+		# 	grads = tf.reshape(tf.stack(grads), shape=[d_h, d_input])
+		# 	j = grads
+		# 	return tf.matrix_determinant(tf.matmul(j,tf.matrix_transpose(j)))
 
 		# self.d_jacobian_model = Model(input_to_h, Lambda(get_d_j)(input_to_h))
 
-	def compile(self, optimizer='adam', active_layers=999):
+	def compile(self, optimizer='adam', active_layers=999, loss_weights = [1e-3, 1, 1]):
 		'''Encoder'''
 		enc_seq_input = Input(shape=(self.len_limit, self.d_model+1), dtype='float32', name = 'enc_seq_input') # input xt, while the last dim is the time dim
 		self.input_xt = enc_seq_input
 
 		enc_seq = Lambda(lambda x:x[:,:,1:], name = 'enc_seq')(enc_seq_input)
-		enc_time = Lambda(lambda x:x[:,:,0], name = 'enc_time')(enc_seq_input)
+		self.enc_seq = enc_seq
+		self.enc_time = Lambda(lambda x:x[:,:,0], name = 'self.enc_time')(enc_seq_input)
 		enc_emb = enc_seq
-		enc_emb = add_layer([enc_emb, self.pos_emb(enc_time, pos_input=True)]) # Here set pos_input=True means input position to calculate positional embeddings
+		enc_emb = add_layer([enc_emb, self.pos_emb(self.enc_time, pos_input=True)]) # Here set pos_input=True means input position to calculate positional embeddings
 		enc_emb = self.emb_dropout(enc_emb)
-		enc_output = self.encoder(enc_emb, enc_seq, active_layers=active_layers)
+		self.enc_output = self.encoder(enc_emb, enc_seq, active_layers=active_layers)
 
-		encoder_zt_logits = self.encoder_dense_zt(enc_output)
+		encoder_zt_logits = self.encoder_dense_zt(self.enc_output)
 		zt = Softmax()(encoder_zt_logits)
 		self.zt = zt
 
@@ -499,71 +502,85 @@ class Transformer:
 		self.encoder_sampled_zt = encoder_sampled_zt
 
 		'''Decoder'''
-		dec_seq_input = encoder_sampled_zt
-		dec_seq  = Lambda(lambda x:x[:,:], name='dec_seq')(dec_seq_input)
-		dec_delay_zt = Lambda(lambda x: K.concatenate([x[:,1:], tf.expand_dims(x[:,-1], axis=-1)]), name='dec_delay_zt')(dec_seq_input) # repeat the last element
-		dec_delay_time = Lambda(lambda x: K.concatenate([x[:,1:], tf.expand_dims(x[:,-1], axis=-1)]), name='dec_delay_time')(enc_time)
+		self.dec_seq_input = encoder_sampled_zt
+		self.dec_seq  = Lambda(lambda x:x[:,:], name='self.dec_seq')(self.dec_seq_input)
+		dec_delay_zt = Lambda(lambda x: K.concatenate([x[:,1:], tf.expand_dims(x[:,-1], axis=-1)]), name='dec_delay_zt')(self.dec_seq_input) # repeat the last element
+		dec_delay_time = Lambda(lambda x: K.concatenate([x[:,1:], tf.expand_dims(x[:,-1], axis=-1)]), name='dec_delay_time')(self.enc_time)
 		self.dec_delay_zt = dec_delay_zt
 
-		self.mu_zt = self.embedding_zt(dec_seq)
-		self.sigma_zt = self.embedding_sigma_zt(dec_seq)
+		self.mu_zt = self.embedding_zt(self.dec_seq)
+		# self.sigma_zt = self.embedding_sigma_zt(self.dec_seq)
 		dec_emb = add_layer([self.mu_zt, self.pos_emb(dec_delay_time, pos_input=True)]) # Here set pos_input=True means input position to calculate positional embeddings
 
-		dec_output = self.decoder(dec_emb, dec_seq, enc_time, enc_output, active_layers=active_layers) # Here use enc_time because enc_seq is only used to generate mask
+		# Here use self.enc_time because enc_seq is only used to generate mask
+		# Note: enc_seq is used to generate mask. Is here the right use?
+		dec_output = self.decoder(dec_emb, enc_seq, enc_seq, self.enc_output, active_layers=active_layers) 
 		self.dec_output = dec_output
 
 		'''Prediction functions'''
 		self.predict_delay_zt_logits = add_layer([dec_output, self.pos_emb(dec_delay_time, pos_input=True)])
 		self.predict_delay_zt_logits = self.dense_zt(self.predict_delay_zt_logits)
 		self.predict_mut = self.dense_mut(dec_output)
-		self.predict_sigmat = self.dense_sigmat(dec_output)
+		# self.predict_sigmat = self.dense_sigmat(dec_output)
 
 		self.mu_t = Add()([self.mu_zt, self.predict_mut])
-		self.sigma_t = Add()([self.sigma_zt, self.predict_sigmat])
-		self.sigma_t = Reshape([self.len_limit, self.d_model, self.d_model])(self.sigma_t)
-		self.sigma_t = Lambda(lambda x: tf.linalg.band_part(x,-1,1))(self.sigma_t) 
+		# self.sigma_t = Add()([self.sigma_zt, self.predict_sigmat])
+		# self.sigma_t = Reshape([self.len_limit, self.d_model, self.d_model])(self.sigma_t)
+		# self.sigma_t = Lambda(lambda x: tf.linalg.band_part(x,-1,1))(self.sigma_t) 
 
 		'''Hidden space transform'''
 		# self.ht = self.time_distributed_trans(enc_seq)
 		# self.d_jacobian = TimeDistributed(self.d_jacobian_model)(enc_seq)
-		self.ht = enc_seq
+		# self.ht = enc_seq
+		self.x_rec_t = self.layer_trans(self.mu_t)
 
 		'''ELBO'''
-		mask = tf.expand_dims(tf.cast(tf.not_equal(enc_time, -1), 'float32'),-1)
+		# mask = tf.expand_dims(tf.cast(tf.not_equal(self.enc_time, -1), 'float32'),-1)
+		mask = tf.cast(tf.not_equal(self.enc_time, -1), 'float32')
 
 		'''
 		p(x(t)|z(t),x(t-1),z(t-1))
+		Use MSE to replace it
 		'''
 		def get_ELBO_part1():
-			GM = tfp.distributions.MultivariateNormalTriL(
-				loc = self.mu_t, 
-				scale_tril= self.sigma_t)
-			p_h = GM.prob(self.ht)
-			loss = K.log(p_h) #+ K.log(self.d_jacobian)
+			# GM = tfp.distributions.MultivariateNormalTriL(
+			# 	loc = self.mu_t, 
+			# 	scale_tril= self.sigma_t)
+			# p_h = GM.prob(self.ht)
+			# loss = K.log(p_h) #+ K.log(self.d_jacobian)
+			# loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
+			# loss = Lambda(lambda x: K.mean(x))(loss)
+			print('Use MSE to replace the emission function')
+			loss = mean_squared_error(enc_seq, self.x_rec_t)
 			loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
-			loss = Lambda(lambda x: K.mean(x))(loss)
-			return loss
+			loss = K.mean(loss)
+			return -loss # return the negative MSE
 
 		'''p(z(t)|z(t-1),x(t-1))'''
-		def get_ELBO_part2():
+		def get_ELBO_part2(q_version = False):
 			loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels = dec_delay_zt, logits = self.predict_delay_zt_logits )
 			loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
 			loss = K.mean(loss)
-			return loss
+			return -loss # cross entropy has a negative sign
 
 
 		'''p(z(t)|x(t))'''
-		def get_ELBO_part3():
-			loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels = encoder_sampled_zt, logits = encoder_zt_logits)
-			loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
-			loss = K.mean(loss)
-			return loss
+		def get_ELBO_part3(q_version = False):
+			if q_version is False:
+				loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels = encoder_sampled_zt, logits = encoder_zt_logits)
+				loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
+				loss = K.mean(loss)
+				return -loss # cross entropy has a negative sign
+			else:
+				loss = mean_squared_error(self.enc_output, self.embedding_zt(encoder_sampled_zt))
+				loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
+				loss = K.mean(loss)
 
 		self.loss1 = get_ELBO_part1()
 		self.loss2 = get_ELBO_part2()
 		self.loss3 = get_ELBO_part3()
 
-		self.ELBO = self.loss1 + self.loss2 + self.loss3
+		self.ELBO = -(loss_weights[0] * self.loss1 + loss_weights[1] * self.loss2 - loss_weights[2] * self.loss3)
 
 		def compute_decoder_predict_zt_acc():
 			corr = K.cast(K.equal(K.cast(dec_delay_zt, 'int32'), K.cast(K.argmax(self.predict_delay_zt_logits, axis=-1), 'int32')), 'float32')
@@ -574,147 +591,113 @@ class Transformer:
 
 		'''Compile model'''
 		self.model = Model(self.input_xt, zt)
-		self.model.add_loss([self.ELBO])
+		self.model.add_loss(self.ELBO)
 
-		self.model.compile(optimizer= Adam(lr=0.0001))
-		self.model.metrics_names.append('Dec pred zt acc')
+		self.model.compile(optimizer= Adam(lr=0.001))
+		self.model.metrics_names.append('Decoder pre acc')
 		self.model.metrics_tensors.append(self.decoder_predict_zt_acc)
+		self.model.metrics_names.append('loss1')
+		self.model.metrics_tensors.append(self.loss1)
+		self.model.metrics_names.append('loss2')
+		self.model.metrics_tensors.append(self.loss2)
+		self.model.metrics_names.append('loss3')
+		self.model.metrics_tensors.append(self.loss3)
+	
+	def justify_model(self, lr = 0.001, loss_weights = [1,1,1]):
+		'''
+		We recommend to only just the first loss term
+		'''
+		self.model = Model(self.input_xt, self.zt)
+		self.ELBO = - (loss_weights[0] * self.loss1 + loss_weights[1]* self.loss2 - loss_weights[2] * self.loss3) 
+		self.model.add_loss([self.ELBO])
+		self.model.compile(optimizer= Adam(lr = lr))
+		self.model.metrics_names.append('Decoder pre acc')
+		self.model.metrics_tensors.append(self.decoder_predict_zt_acc)
+		self.model.metrics_names.append('loss1')
+		self.model.metrics_tensors.append(self.loss1)
+		self.model.metrics_names.append('loss2')
+		self.model.metrics_tensors.append(self.loss2)
+		self.model.metrics_names.append('loss3')
+		self.model.metrics_tensors.append(self.loss3)
+	
+	def initial_model(self, X, active_layers = 999, batch_size = 128):
+		'''
+		First, train model with only the reconstuction loss (loss 1), building the hidden space.
+		Then, train a KMeans or GM on the hidden space to get states.
+		Finally, train the encoder to predict the trained states with.
+		'''
+
+		'''Step one'''
+		print('Start training reconstruction model'+'-'*30)
+		init_dec_input = self.enc_output
+		# Note here the dec_seq is problembatic
+		init_dec_output = self.decoder(init_dec_input, self.enc_seq, self.enc_seq, self.enc_output, active_layers=active_layers)
+		init_mut = self.dense_mut(init_dec_output)
+		init_recon_xt = self.layer_trans(init_mut) # Note here recon_xt should introduce temporal information
+
+		mask = tf.cast(tf.not_equal(self.enc_time, -1), 'float32')
+		loss = mean_squared_error(self.enc_seq, init_recon_xt)
+		loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
+		loss = K.mean(loss)
+
+		self.recon_model = Model(self.input_xt, init_recon_xt)
+		self.recon_model.add_loss(loss)
+		self.recon_model.compile('adam')
+		self.recon_model.fit(X, batch_size = batch_size, epochs = 10)
+		print('Finish training reconstruction model'+'-'*30)
+
+
+		'''Step two'''
+		print('Start getting hidden space'+'-'*30)
+		self.hidden_model = Model(self.input_xt, init_dec_input)
+		X_hidden = self.hidden_model.predict(X)
+
+		X_hidden_ = []
+		lens = []
+		for index, item in enumerate(X):
+			l = int(max(item[:,0]))+1
+			lens.append(l)
+			for i in range(l):
+				X_hidden_.append(X_hidden[index,i])
+
+		print('Finish getting hidden space'+'-'*30)
+				
+
+		print('Start KMeans init'+'-'*30)
+		from sklearn.cluster import KMeans
+		kmeans = KMeans(self.num_states, n_jobs = 4, n_init = 3).fit(X_hidden_)
+
+		initial_mu = kmeans.cluster_centers_
+		self.embedding_zt.set_weights([initial_mu])
+
+		initial_states_ = kmeans.predict(X_hidden_)
+		initial_states = []
+		current_l = 0
+		for index, l in enumerate(lens):
+			s = initial_states_[current_l:current_l+l]
+			current_l = current_l+l
+			s = list(s) + [s[-1]] * (self.len_limit - l)
+			initial_states.append(s)
+
+		initial_states = np.array(initial_states).reshape(-1, self.len_limit)
+
+		print('Finish KMeans init'+'-'*30)
+		
+
+		'''Step three'''
+		print('Start training encoder'+'-'*30)
+		self.predict_model = Model(self.input_xt, self.zt)
+		self.predict_model.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['acc'])
+		self.predict_model.fit(X, np_utils.to_categorical(initial_states), batch_size=batch_size, epochs=10)
+		print('Finish training encoder'+'-'*30)
+
+
+		print('Finish initialization'+'-'*30)
+
+		
+
 	
 
-	def make_src_seq_matrix(self, input_seqs):
-		if type(input_seqs[0]) == type(''): input_seqs = [input_seqs]
-		maxlen = max(map(len, input_seqs))
-		src_seq = np.zeros((len(input_seqs), maxlen+3), dtype='int32')
-		src_seq[:,0] = self.i_tokens.startid()
-		for i, seq in enumerate(input_seqs):
-			for ii, z in enumerate(seq):
-				src_seq[i,1+ii] = self.i_tokens.id(z)
-			src_seq[i,1+len(seq)] = self.i_tokens.endid()
-		return src_seq
-	
-	def make_readout_decode_model(self, max_output_len=32):
-		src_seq_input = Input(shape=(None,), dtype='int32')
-		tgt_start_input = Input(shape=(1,), dtype='int32')
-		src_seq = src_seq_input
-		enc_mask = Lambda(lambda x:K.cast(K.greater(x, 0), 'float32'))(src_seq)
-		src_emb = self.i_word_emb(src_seq)
-		if self.pos_emb: 
-			src_emb = add_layer([src_emb, self.pos_emb(src_seq)])
-
-		src_emb = self.emb_dropout(src_emb)
-		enc_output = self.encoder(src_emb, src_seq)
-
-		tgt_emb = self.o_word_emb(tgt_start_input)
-		tgt_seq = Lambda(lambda x:K.repeat_elements(x, max_output_len, 1))(tgt_start_input)
-		rep_input = Lambda(lambda x:K.repeat_elements(x, max_output_len, 1))(tgt_emb)
-	
-		cell = ReadoutDecoderCell(self.o_word_emb, self.pos_emb, self.decoder, self.target_layer)
-		final_output = InferRNN(cell, return_sequences=True)(rep_input, 
-				initial_state=[tgt_start_input, K.ones_like(tgt_start_input), K.zeros_like(tgt_seq)] + \
-						[rep_input for _ in self.decoder.layers], 
-				constants=[enc_output, enc_mask])
-		final_output = Lambda(lambda x:K.squeeze(x, -1))(final_output)
-		self.readout_model = Model([src_seq_input, tgt_start_input], final_output)
-		
-	def decode_sequence_readout_x(self, X, batch_size=32, max_output_len=64):
-		if self.readout_model is None: self.make_readout_decode_model(max_output_len)
-		target_seq = np.zeros((X.shape[0], 1), dtype='int32')
-		target_seq[:,0] = self.o_tokens.startid()
-		ret = self.readout_model.predict([X, target_seq], batch_size=batch_size, verbose=1)
-		return ret
-
-	def generate_sentence(self, rets, delimiter=''):
-		sents = []
-		for x in rets:
-			end_pos = min([i for i, z in enumerate(x) if z == self.o_tokens.endid()]+[len(x)])
-			rsent = [*map(self.o_tokens.token, x)][:end_pos]
-			sents.append(delimiter.join(rsent))
-		return sents
-
-	def decode_sequence_readout(self, input_seqs, delimiter=''):
-		if self.readout_model is None: self.make_readout_decode_model()
-		src_seq = self.make_src_seq_matrix(input_seqs)
-		target_seq = np.zeros((src_seq.shape[0],1), dtype='int32')
-		target_seq[:,0] = self.o_tokens.startid()
-		rets = self.readout_model.predict([src_seq, target_seq])
-		rets = self.generate_sentence(rets, delimiter)
-		if type(input_seqs[0]) is type('') and len(rets) == 1: rets = rets[0]
-		return rets
-
-	def make_fast_decode_model(self):
-		src_seq_input = Input(shape=(None,), dtype='int32')
-		src_emb = self.i_word_emb(src_seq_input)
-		if self.pos_emb: src_emb = add_layer([src_emb, self.pos_emb(src_seq_input)])
-		src_emb = self.emb_dropout(src_emb)
-		enc_output = self.encoder(src_emb, src_seq_input)
-		self.encode_model = Model(src_seq_input, enc_output)
-
-		self.decoder_pre_step = DecoderPerStep(self.decoder)
-		
-		src_seq_input = Input(shape=(None,), dtype='int32')
-		tgt_one_input = Input(shape=(1,), dtype='int32')
-		enc_ret_input = Input(shape=(None, self.d_model))
-		dec_ret_inputs = [Input(shape=(None, self.d_model)) for _ in self.decoder.layers]
-
-		tgt_pos = Lambda(lambda x:tf.shape(x)[1])(dec_ret_inputs[0])
-
-		tgt_one = self.o_word_emb(tgt_one_input)
-		if self.pos_emb: tgt_one = add_layer([tgt_one, self.pos_emb(tgt_pos, pos_input=True)])
-
-		dec_outputs = self.decoder_pre_step([tgt_one, src_seq_input, enc_ret_input]+dec_ret_inputs)	
-		final_output = self.target_layer(dec_outputs[-1])
-
-		self.decode_model = Model([tgt_one_input, src_seq_input, enc_ret_input]+dec_ret_inputs, 
-							dec_outputs[:-1]+[final_output])
-		
-
-	def decode_sequence_fast(self, input_seqs, batch_size=32, delimiter='', verbose=0):
-		if self.decode_model is None: self.make_fast_decode_model()
-		src_seq = self.make_src_seq_matrix(input_seqs)
-
-		start_mark, end_mark = self.o_tokens.startid(), self.o_tokens.endid()
-		max_len = self.len_limit
-		encode_model = self.encode_model
-		decode_model = self.decode_model
-
-		decode_batch = lambda x: decode_batch_greedy(x, encode_model, decode_model, start_mark, end_mark, max_len)
-		
-		rets = []
-		rng = range(0, src_seq.shape[0], batch_size)
-		if verbose and src_seq.shape[0] > batch_size: rng = tqdm(rng, total=len(rng))
-		for iter in rng:
-			rets.extend( decode_batch(src_seq[iter:iter+batch_size]) )
-			
-		rets = [delimiter.join(list(map(self.o_tokens.token, ret))) for ret in rets]
-		if type(input_seqs[0]) is type('') and len(rets) == 1: rets = rets[0]
-		return rets
-
-	def beam_search(self, input_seqs, topk=5, batch_size=8, length_penalty=1, delimiter='', verbose=0):
-		if self.decode_model is None: self.make_fast_decode_model()
-		src_seq = self.make_src_seq_matrix(input_seqs)
-
-		start_mark, end_mark = self.o_tokens.startid(), self.o_tokens.endid()
-		max_len = self.len_limit
-		encode_model = self.encode_model
-		decode_model = self.decode_model
-
-		decode_batch = lambda x: decode_batch_beam_search(x, topk, encode_model, decode_model,
-													start_mark, end_mark, max_len)
-		
-		rets = {}
-		rng = range(0, src_seq.shape[0], batch_size)
-		if verbose and src_seq.shape[0] > batch_size: rng = tqdm(rng, total=len(rng))
-
-		for iter in rng:
-			for i, x, y in decode_batch(src_seq[iter:iter+batch_size]):
-				rets.setdefault(iter+i, []).append( (x, y/np.power(len(x)+1, length_penalty)) )
-		rets = {x:sorted(ys,key=lambda x:x[-1], reverse=True) for x,ys in rets.items()}
-		rets = [rets[i] for i in range(len(rets))]
-
-		rets = [[(delimiter.join(list(map(self.o_tokens.token, x))), y) for x, y in r] for r in rets]
-		if type(input_seqs[0]) is type('') and len(rets) == 1: rets = rets[0]
-		return rets
-	
 class PosEncodingLayer:
 	def __init__(self, max_len, d_emb):
 		self.pos_emb_matrix = Embedding(max_len, d_emb, trainable=False, \
@@ -745,54 +728,6 @@ class LRSchedulerPerStep(Callback):
 		self.step_num += 1
 		lr = self.basic * min(self.step_num**-0.5, self.step_num*self.warm)
 		K.set_value(self.model.optimizer.lr, lr)
-
-
-class QANet_ConvBlock:
-	def __init__(self, dim, n_conv=2, kernel_size=7, dropout=0.1):
-		self.convs = [SeparableConv1D(dim, kernel_size, activation='relu', padding='same') for _ in range(n_conv)]
-		self.norm = LayerNormalization()
-		self.dropout = Dropout(dropout)
-	def __call__(self, x):
-		for i in range(len(self.convs)):
-			z = self.norm(x)
-			if i % 2 == 0: z = self.dropout(z)
-			z = self.convs[i](z)
-			x = add_layer([x, z])
-		return x
-
-class QANet_Block:
-	def __init__(self, dim, n_head, n_conv, kernel_size, dropout=0.1, add_pos=True):
-		self.conv = QANet_ConvBlock(dim, n_conv=n_conv, kernel_size=kernel_size, dropout=dropout)
-		self.self_att = MultiHeadAttention(n_head=n_head, d_model=dim, 
-									 d_k=dim//n_head, d_v=dim//n_head, 
-									 dropout=dropout, use_norm=False)
-		self.feed_forward = PositionwiseFeedForward(dim, dim, dropout=dropout)
-		self.norm = LayerNormalization()
-		self.add_pos = add_pos
-	def __call__(self, x, mask):
-		if self.add_pos: x = AddPosEncoding()(x)
-		x = self.conv(x)
-		z = self.norm(x)
-		z, _ = self.self_att(z, z, z, mask)
-		x = add_layer([x, z])
-		z = self.norm(x)
-		z = self.feed_forward(z)
-		x = add_layer([x, z])
-		return x
-
-class QANet_Encoder:
-	def __init__(self, dim=128, n_head=8, n_conv=2, n_block=1, kernel_size=7, dropout=0.1, add_pos=True):
-		self.dim = dim
-		self.n_block = n_block
-		self.conv_first = SeparableConv1D(dim, 1, padding='same')
-		self.enc_block = QANet_Block(dim, n_head=n_head, n_conv=n_conv, kernel_size=kernel_size, 
-								dropout=dropout, add_pos=add_pos)
-	def __call__(self, x, mask):
-		if K.int_shape(x)[-1] != self.dim:
-			x = self.conv_first(x)
-		for i in range(self.n_block):
-			x = self.enc_block(x, mask)
-		return x
 
 
 if __name__ == '__main__':
