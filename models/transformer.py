@@ -8,7 +8,7 @@ import tensorflow as tf
 tfe = tf.contrib.eager
 import tensorflow_probability as tfp
 from keras.optimizers import Adam, SGD
-from keras.losses import mean_squared_error
+from keras.losses import mean_squared_error, categorical_crossentropy
 from keras.utils import np_utils
 import keras.regularizers as regularizers
 
@@ -193,6 +193,21 @@ class SelfAttention():
 		x = src_emb		
 		for enc_layer in self.layers[:active_layers]:
 			x, att = enc_layer(x, mask)
+			if return_att: atts.append(att)
+		return (x, atts) if return_att else x
+
+
+class MaskedSelfAttention():
+	def __init__(self, d_model, d_inner_hid, n_head, layers=6, dropout=0.1):
+		self.layers = [EncoderLayer(d_model, d_inner_hid, n_head, dropout) for _ in range(layers)]
+	def __call__(self, src_emb, src_seq, return_att=False, active_layers=999):
+		if return_att: atts = []
+		self_pad_mask = Lambda(lambda x:GetPadMask(x, x))(src_seq)
+		self_sub_mask = Lambda(GetSubMask)(src_seq)
+		self_mask = Lambda(lambda x:K.minimum(x[0], x[1]))([self_pad_mask, self_sub_mask])
+		x = src_emb		
+		for enc_layer in self.layers[:active_layers]:
+			x, att = enc_layer(x, self_mask)
 			if return_att: atts.append(att)
 		return (x, atts) if return_att else x
 
@@ -404,14 +419,21 @@ def get_hidden_trans_layer(d_model, d_data, num_hidden_trans_layer):
 		layer_trans = Sequential(name='xt_reconstruct')
 
 		for i in range(num_hidden_trans_layer-1):
-			layer_trans.add(TimeDistributed(Dense(d_model, activation='relu', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4))))
+			layer_trans.add(TimeDistributed(Dense(d_model, activation='relu')))
 			layer_trans.add(TimeDistributed(BatchNormalization()))
 
-		layer_trans.add(TimeDistributed(Dense(d_data, kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4))))
+		layer_trans.add(TimeDistributed(Dense(d_data)))
 
 		return layer_trans
 
-	
+# class predictor(Layer):
+# 	'''
+# 	Input z(t) and x(t), calculate the personalized effect mu_t
+# 	'''
+# 	def __init(self, embed_layer):
+# 		self.personalized_encoder = 
+
+
 
 class Transformer:
 	def __init__(self, len_limit = 50, time_limit = 50, \
@@ -437,59 +459,53 @@ class Transformer:
 		d_k = d_v = d_model // n_head
 		assert d_k * n_head == d_model and d_v == d_k
 
-		'''xt to ht'''
-		# self.layer_trans_xh = Sequential(name='xt_to_ht')
-		# self.layer_trans_xh.add(Dense(d_model, activation='relu', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4)))
-		# self.layer_trans_xh.add(BatchNormalization())
-		# self.layer_trans.add(Dense(d_model, activation='relu', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4)))
-
 		'''Encoder'''
-		self.dense_emb = TimeDistributed(Dense(self.d_model,kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4), name = 'encoder_dense_emb'))
-		self.pos_emb = PosEncodingLayer(time_limit, d_emb)
-		self.emb_dropout = Dropout(dropout)
-		self.encoder = SelfAttention(d_model, d_inner_hid, n_head, layers, dropout)
-		# self.attention_weight = TimeDistributed(Dense(1,activation = 'softmax', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4), name = 'encoder_dense_zt'))
-		self.encoder_dense_zt = TimeDistributed(Dense(num_states,kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4), name = 'encoder_dense_zt'))
+		with tf.name_scope('encoder'):
+			self.input_xt = Input(shape=(self.len_limit, self.d_data+1), dtype='float32', name = 'enc_seq_input')
+			self.dense_emb = TimeDistributed(Dense(self.d_model), name = 'encoder_dense_emb')
+			self.pos_emb = PosEncodingLayer(time_limit, d_emb)
+			self.emb_dropout = Dropout(dropout)
+			self.encoder = SelfAttention(d_model, d_inner_hid, n_head, layers, dropout)
+			self.encoder_dense_zt = TimeDistributed(Dense(num_states), name = 'encoder_dense_zt')
 
 		'''Decoder'''
-		# self.d_sigma = self.d_model * self.d_model # Compute sigma through cov
-		self.embedding_zt = Embedding(num_states, d_model, name='zt_embedding')
-		self.decoder = Decoder(d_model, d_inner_hid, n_head, layers, dropout)
+		with tf.name_scope('decoder'):
+			self.embedding_zt = Embedding(num_states, d_model, name='zt_embedding')
+			self.decoder = Decoder(d_model, d_inner_hid, n_head, layers, dropout)
 		# self.embedding_sigma_zt  = Embedding(num_states, self.d_sigma, name='zt_embedding_sigma')
 
 		'''Prediction functions'''
-		self.dense_zt = TimeDistributed(Dense(self.num_states, kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4), name = 'prediction_zt'))
-		self.dense_mut = TimeDistributed(Dense(d_model, kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4), name = 'prediction_mut', kernel_initializer='zeros')) # should I add some other regularization?
-		# Simga is a matrix with size (d_model, d_model)
-		# self.dense_sigmat = TimeDistributed(Dense(self.d_sigma, kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4), name = 'prediction_sigmat'))
+		with tf.name_scope('prediction'):
+			# self.presonalized_encoder = SelfAttention(d_model, d_inner_hid, n_head, layers, dropout)
+			self.dense_zt = TimeDistributed(Dense(self.num_states), name = 'prediction_zt')
+			self.dense_mut = TimeDistributed(Dense(d_model), name = 'prediction_mut') # should I add some other regularization?
+			# Simga is a matrix with size (d_model, d_model)
+			# self.dense_sigmat = TimeDistributed(Dense(self.d_sigma, name = 'prediction_sigmat'))
 
 		'''Hidden space transform'''
-		self.layer_trans = get_hidden_trans_layer(d_model, d_data, num_hidden_trans_layer)
-
-		# self.layer_trans = Sequential(name='ht_trans')
-		# self.layer_trans.add(Dense(d_model, activation='relu', kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4)))
+		# self.layer_trans = get_hidden_trans_layer(d_model, d_data, num_hidden_trans_layer)
+		with tf.name_scope('transform'):
+			self.layer_trans = TimeDistributed(Dense(d_data))
+		# self.layer_trans.add(Dense(d_model, activation='relu'))
 		# self.layer_trans.add(BatchNormalization())
-		# self.layer_trans.add(Dense(d_data, kernel_regularizer=regularizers.l2(5e-4), bias_regularizer=regularizers.l2(5e-4)))
+		# self.layer_trans.add(Dense(d_data))
 		# self.layer_trans.add(BatchNormalization())
 
 
 	def compile(self, optimizer='adam', active_layers=999, loss_weights = [2e-2, 1, 1]):
 		'''Encoder'''
-		enc_seq_input = Input(shape=(self.len_limit, self.d_data+1), dtype='float32', name = 'enc_seq_input') # input xt, while the last dim is the time dim
-		self.input_xt = enc_seq_input
+		enc_seq_input = self.input_xt # input xt, while the last dim is the time dim
 
 		enc_seq = Lambda(lambda x:x[:,:,1:], name = 'enc_seq')(enc_seq_input)
 		self.enc_seq = enc_seq
-		self.enc_mask = Lambda(lambda x:tf.cast(tf.reduce_any(K.not_equal(enc_seq, 0), axis=-1), 'float32'), name = 'enc_mask')(enc_seq)
-		# self.enc_mask_ = Lambda(lambda x: tf.expand_dims(x,-1))(self.enc_mask)
-		self.enc_mask_ = self.enc_mask
+		self.enc_mask = Lambda(lambda x:tf.cast(tf.reduce_any(K.not_equal(x, 0), axis=-1), 'float32'), name = 'enc_mask')(enc_seq)
 		self.enc_time = Lambda(lambda x:x[:,:,0], name = 'enc_time')(enc_seq_input)
 
 		enc_emb = self.dense_emb(enc_seq)
 		enc_emb = add_layer([enc_emb, self.pos_emb(self.enc_time, pos_input=True)]) # Here set pos_input=True means input position to calculate positional embeddings
 		enc_emb = self.emb_dropout(enc_emb)
 		self.enc_emb = enc_emb
-		self.enc_output = self.encoder(enc_emb, self.enc_mask_, active_layers=active_layers)
+		self.enc_output = self.encoder(enc_emb, self.enc_mask, active_layers=active_layers)
 
 		encoder_zt_logits = self.encoder_dense_zt(self.enc_output)
 		zt = Softmax()(encoder_zt_logits)
@@ -504,23 +520,27 @@ class Transformer:
 		'''Decoder'''
 		self.dec_seq_input = encoder_sampled_zt
 		self.dec_seq  = Lambda(lambda x:x[:,:], name='self.dec_seq')(self.dec_seq_input)
+		self.delay_mask = Lambda(lambda x: K.concatenate([x[:,1:], tf.expand_dims(x[:,-1], axis=-1)]), name='dec_delay_mask')(self.enc_mask) # repeat the last element
 		dec_delay_zt = Lambda(lambda x: K.concatenate([x[:,1:], tf.expand_dims(x[:,-1], axis=-1)]), name='dec_delay_zt')(self.dec_seq_input) # repeat the last element
 		dec_delay_time = Lambda(lambda x: K.concatenate([x[:,1:], tf.expand_dims(x[:,-1], axis=-1)]), name='dec_delay_time')(self.enc_time)
 		self.dec_delay_zt = dec_delay_zt
 
 		self.mu_zt = self.embedding_zt(self.dec_seq)
 		# self.sigma_zt = self.embedding_sigma_zt(self.dec_seq)
+		
 		dec_emb = add_layer([self.mu_zt, self.pos_emb(dec_delay_time, pos_input=True)]) # Here set pos_input=True means input position to calculate positional embeddings
+		dec_emb = self.mu_zt
 
-		# Here use self.enc_time because enc_seq is only used to generate mask
-		# Note: enc_seq is used to generate mask. Is here the right use?
-		dec_output = self.decoder(dec_emb, self.enc_mask_, self.enc_mask_, self.enc_output, active_layers=active_layers) 
+		# Here use self.enc_mask to generate mask
+		dec_output = self.decoder(dec_emb, self.enc_mask, self.enc_mask, self.enc_output, active_layers=active_layers) 
 		self.dec_output = dec_output
 
 		'''Prediction functions'''
-		self.predict_delay_zt_logits = add_layer([dec_output, self.pos_emb(dec_delay_time, pos_input=True)])
+		# self.predict_delay_zt_logits = add_layer([dec_output, self.pos_emb(dec_delay_time, pos_input=True)])
+		self.predict_delay_zt_logits = dec_output # Here I do not count temporal information
 		self.predict_delay_zt_logits = self.dense_zt(self.predict_delay_zt_logits)
 		self.predict_mut = self.dense_mut(dec_output)
+		# self.predict_mut = dec_output
 		# self.predict_sigmat = self.dense_sigmat(dec_output)
 
 		self.mu_t = Add()([self.mu_zt, self.predict_mut])
@@ -529,14 +549,13 @@ class Transformer:
 		# self.sigma_t = Lambda(lambda x: tf.linalg.band_part(x,-1,1))(self.sigma_t) 
 
 		'''Hidden space transform'''
-		# self.ht = self.time_distributed_trans(enc_seq)
-		# self.d_jacobian = TimeDistributed(self.d_jacobian_model)(enc_seq)
-		# self.ht = enc_seq
 		self.x_rec_t = self.layer_trans(self.mu_t)
 
+
+
 		'''ELBO'''
-		# mask = tf.expand_dims(tf.cast(tf.not_equal(self.enc_time, -1), 'float32'),-1)
 		mask = self.enc_mask
+		delay_mask = self.delay_mask
 
 		'''
 		p(x(t)|z(t),x(t-1),z(t-1))
@@ -559,7 +578,7 @@ class Transformer:
 		'''p(z(t)|z(t-1),x(t-1))'''
 		def get_ELBO_part2(q_version = False):
 			loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels = dec_delay_zt, logits = self.predict_delay_zt_logits )
-			loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
+			loss = tf.reduce_sum(loss * delay_mask, -1) / tf.reduce_sum(delay_mask, -1)
 			loss = K.mean(loss)
 			return loss # cross entropy has a negative sign
 
@@ -584,7 +603,7 @@ class Transformer:
 
 		def compute_decoder_predict_zt_acc():
 			corr = K.cast(K.equal(K.cast(dec_delay_zt, 'int32'), K.cast(K.argmax(self.predict_delay_zt_logits, axis=-1), 'int32')), 'float32')
-			corr = K.sum(corr * mask, -1) / K.sum(mask, -1)
+			corr = K.sum(corr * delay_mask, -1) / K.sum(delay_mask, -1)
 			return K.mean(corr)
 
 		self.decoder_predict_zt_acc = compute_decoder_predict_zt_acc()
@@ -599,15 +618,7 @@ class Transformer:
 		self.model.add_metric(self.loss3, 'loss3')
 
 		self.model.compile(optimizer= Adam(lr=0.001))
-		# self.model.metrics_tensors = []
-		# self.model.metrics_names.append('Decoder pre acc')
-		# self.model.metrics.append(self.decoder_predict_zt_acc)
-		# self.model.metrics.append('loss1')
-		# self.model.metrics.append(self.loss1)
-		# self.model.metrics_names.append('loss2')
-		# self.model.metrics.append(self.loss2)
-		# self.model.metrics_names.append('loss3')
-		# self.model.metrics.append(self.loss3)
+
 	
 	def justify_model(self, lr = 0.001, loss_weights = [2e-2,1,1]):
 		'''
@@ -635,11 +646,10 @@ class Transformer:
 	
 	def init_model_stage_one(self, X, active_layers = 999, batch_size = 128):
 		'''Step one'''
-		print('Start training reconstruction model'+'-'*30)
-		init_dec_input = self.enc_output
-		init_dec_output = self.decoder(init_dec_input, self.enc_mask_, self.enc_mask_, self.enc_output, active_layers=active_layers)
-		init_mut = self.dense_mut(init_dec_output)
-		init_recon_xt = self.layer_trans(init_mut) # Note here recon_xt should introduce temporal information
+		print('Start training encoder'+'-'*30)
+		init_input = self.enc_output
+		# init_mut = self.dense_mut(init_input)
+		init_recon_xt = self.layer_trans(init_input) # Note here recon_xt should introduce temporal information
 
 		mask = self.enc_mask
 		loss = mean_squared_error(self.enc_seq, init_recon_xt)
@@ -649,6 +659,8 @@ class Transformer:
 		self.recon_model = Model(self.input_xt, init_recon_xt)
 		self.recon_model.add_loss(loss)
 		self.recon_model.compile(Adam(1e-3))
+		self.recon_model.fit(X, batch_size = batch_size, epochs = 30)
+		self.recon_model.compile(Adam(1e-4))
 		self.recon_model.fit(X, batch_size = batch_size, epochs = 50)
 		print('Finish training reconstruction model'+'-'*30)
 
@@ -694,15 +706,46 @@ class Transformer:
 
 		'''Step three'''
 		print('Start training encoder'+'-'*30)
-		self.predict_model = Model(self.input_xt, self.zt)
-		self.predict_model.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['acc'])
-		self.predict_model.fit(X, np_utils.to_categorical(self.initial_states), batch_size=batch_size, epochs=50)
+
+		state_true = Input(shape=(self.len_limit,self.num_states),dtype='int32')
+			
+		self.classify_model = Model([self.input_xt, state_true], self.zt)
+
+		loss = categorical_crossentropy(state_true, self.zt)
+		loss = tf.reduce_sum(loss * self.enc_mask, -1) / tf.reduce_sum(self.enc_mask, -1)
+		loss = K.mean(loss)
+
+		self.classify_model.add_loss(loss)
+
+		self.classify_model.compile(optimizer = 'adam', metrics = ['acc'])
+		self.classify_model.fit([X, np_utils.to_categorical(self.initial_states)], batch_size=batch_size, epochs=50)
 		print('Finish training encoder'+'-'*30)
 
 
 		print('Finish initialization'+'-'*30)
 
 		
+	def init_model_stage_three(self, X, batch_size = 128):
+		'''stage one + stage two'''
+
+		emb = self.mu_zt
+		enc_output = self.encoder(emb, self.enc_mask, active_layers=999)
+		rec_x = self.layer_trans(enc_output)
+
+		self.stage_three_model = Model(self.input_xt,rec_x)
+
+		mask = self.enc_mask
+		loss = mean_squared_error(self.enc_seq, self.stage_three_model.output)
+		loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
+		loss = K.mean(loss)
+
+		self.stage_three_model.add_loss(loss)
+		self.stage_three_model.add_loss(self.loss3)
+		self.stage_three_model.add_metric(loss,'mse')
+		self.stage_three_model.add_metric(self.loss3,'crossentropy')
+		self.stage_three_model.compile(Adam(1e-3))
+
+		self.stage_three_model.fit(X, batch_size = batch_size, epochs = 10)
 
 	
 
