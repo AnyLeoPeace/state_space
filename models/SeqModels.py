@@ -446,8 +446,7 @@ class attentive_state_space_model:
             print('Use build_transformer_model instead')
 
                                              
-        elif self.inference_network == 'Seq2SeqAttention':
-            
+        elif self.inference_network == 'Seq2SeqAttention':            
             try:
                 
                 tf.nn.seq2seq = tf.contrib.legacy_seq2seq

@@ -1,12 +1,11 @@
 ### Setting up the experiment 
 # from data.make_data import generate_trajectory
-from models.transformer import *
-from keras import optimizers, losses
-import keras.backend as K
+# from keras import optimizers, losses
+# import keras.backend as K
 import numpy as np
 from utils import padd_data
 import os
-import tensorflow as tf
+# import tensorflow as tf
 
 '''Generate data'''
 # X_observations, true_states = generate_trajectory(num_states=3, 
@@ -22,14 +21,6 @@ import tensorflow as tf
 data = np.load('./data/syn_data.npy', allow_pickle = True).item()
 X_observations = data['X']
 true_states = data['states']
-
-'''GPU'''
-os.environ['CUDA_VISIBLE_DEVICES'] = '1' 
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True
-config.gpu_options.per_process_gpu_memory_fraction = 0.8
-
 
 '''Pad data'''
 max_len = 50
@@ -47,27 +38,26 @@ for item in true_states:
 states_padded = np.array(states_padded)
 
 
-'''Get model'''
-trans = Transformer(len_limit=50, time_limit=50, layers=2, n_head=2, d_data=16, d_model=32)
-lr_scheduler = LRSchedulerPerStep(trans.d_model, 4000) 
-# model_saver = ModelCheckpoint(mfile, monitor='ppl', save_best_only=True, save_weights_only=True)
 
-trans.compile()
+train_X = []
+train_states = []
+train_masks = []
 
-'''Init'''
-trans.init_model_stage_one(X_padded, batch_size = 128)
-trans.init_model_stage_two(X_padded, batch_size = 128)
-trans.init_model_stage_three(X_padded, batch_size = 128)
-
-
-'''Train'''
-trans.justify_model(lr=1e-3, loss_weights=[1,0,0])
-trans.model.fit(X_padded, batch_size=128, epochs = 50)
-
-trans.model.compile(optimizer=Adam(1e-3), metrics = ['acc'])
-results = trans.model.predict(X_padded)
-results = np.argmax(results,-1) # All zero???
+for index, item in enumerate(X_padded):
+    for i in range(len(item)):
+        if mask[i] is True:
+            temp_mask = np.zeros(len(item),bool)
+            temp_mask[:i+1] = 1
+            seq = np.copy(item) * temp_mask
+            states = np.copy(states_padded[index]) * temp_mask
+            train_X.append(seq)
+            train_states.append(states)
+            train_masks.append(temp_mask)
+        else:
+            break
 
 
-model = Model(trans.input_xt, trans.enc_mask)
-model.predict(X_padded[:10])[0]
+
+
+
+
