@@ -12,6 +12,8 @@ from keras.losses import mean_squared_error, categorical_crossentropy
 from keras.utils import np_utils
 import keras.regularizers as regularizers
 from keras_radam import RAdam
+from qlayer import QLayer
+
 try:
 	from tqdm import tqdm
 	from dataloader import TokenList, pad_to_longest
@@ -187,9 +189,16 @@ def GetSubMask(s):
 class SelfAttention():
 	def __init__(self, d_model, d_inner_hid, n_head, layers=6, dropout=0.1):
 		self.layers = [EncoderLayer(d_model, d_inner_hid, n_head, dropout) for _ in range(layers)]
-	def __call__(self, src_emb, src_seq, return_att=False, active_layers=999):
+	def __call__(self, src_emb, src_seq, return_att=False, active_layers=999, masked = False):
 		if return_att: atts = []
-		mask = Lambda(lambda x:K.sum(K.cast(K.greater(x, 0), 'float32'), axis=-1))(src_seq)
+
+		if masked == False:
+			mask = Lambda(lambda x:K.sum(K.cast(K.greater(x, 0), 'float32'), axis=-1))(src_seq)
+		else:
+			self_pad_mask = Lambda(lambda x:GetPadMask(x, x))(src_seq)
+			self_sub_mask = Lambda(GetSubMask)(src_seq)
+			mask = Lambda(lambda x:K.minimum(x[0], x[1]))([self_pad_mask, self_sub_mask])
+
 		x = src_emb		
 		for enc_layer in self.layers[:active_layers]:
 			x, att = enc_layer(x, mask)
@@ -467,12 +476,9 @@ class Transformer:
 			self.emb_dropout = Dropout(dropout)
 			self.encoder = SelfAttention(d_model, d_inner_hid, n_head, layers, dropout)
 			self.encoder_dense_zt = TimeDistributed(Dense(num_states), name = 'encoder_dense_zt')
+			# self.embedding_zt = Embedding(num_states, d_model, name='zt_embedding')
+			self.qlayer = QLayer(set_fixed=1, dense_dim=d_model, concept_dim = d_model, num_concept=num_states)
 
-		'''Decoder'''
-		with tf.name_scope('decoder'):
-			self.embedding_zt = Embedding(num_states, d_model, name='zt_embedding')
-			self.decoder = Decoder(d_model, d_inner_hid, n_head, layers, dropout)
-		# self.embedding_sigma_zt  = Embedding(num_states, self.d_sigma, name='zt_embedding_sigma')
 
 		'''Prediction functions'''
 		with tf.name_scope('prediction'):
@@ -486,10 +492,13 @@ class Transformer:
 		# self.layer_trans = get_hidden_trans_layer(d_model, d_data, num_hidden_trans_layer)
 		with tf.name_scope('transform'):
 			self.layer_trans = TimeDistributed(Dense(d_data))
-		# self.layer_trans.add(Dense(d_model, activation='relu'))
-		# self.layer_trans.add(BatchNormalization())
-		# self.layer_trans.add(Dense(d_data))
-		# self.layer_trans.add(BatchNormalization())
+
+		with tf.name_scope('xh_transform'):
+			self.layer_trans_xh = Sequential()
+			self.layer_trans_xh.add(TimeDistributed(Dense(d_model, activation='relu')))	
+			self.layer_trans_xh.add(BatchNormalization())
+			self.layer_trans_xh.add(TimeDistributed(Dense(d_model, activation='relu')))	
+			self.layer_trans_xh.add(BatchNormalization())
 
 
 	def compile(self, optimizer='adam', active_layers=999, loss_weights = [2e-2, 1, 1]):
@@ -500,41 +509,16 @@ class Transformer:
 		self.enc_seq = enc_seq
 		self.enc_mask = Lambda(lambda x:tf.cast(tf.reduce_any(K.not_equal(x, 0), axis=-1), 'float32'), name = 'enc_mask')(enc_seq)
 		self.enc_time = Lambda(lambda x:x[:,:,0], name = 'enc_time')(enc_seq_input)
+		dec_delay_time = Lambda(lambda x: K.concatenate([x[:,1:], tf.expand_dims(x[:,-1], axis=-1)]), name='dec_delay_time')(self.enc_time)
 
-		enc_emb = self.dense_emb(enc_seq)
-		enc_emb = add_layer([enc_emb, self.pos_emb(self.enc_time, pos_input=True)]) # Here set pos_input=True means input position to calculate positional embeddings
+		enc_emb = self.layer_trans_xh(enc_seq)
+		self.mu_zt, self.enc_emb_origin, self.encoder_sampled_zt = self.qlayer(enc_emb)
+
+		enc_emb = add_layer([self.mu_zt, self.pos_emb(self.enc_time, pos_input=True)]) # Here set pos_input=True means input position to calculate positional embeddings
 		enc_emb = self.emb_dropout(enc_emb)
 		self.enc_emb = enc_emb
-		self.enc_output = self.encoder(enc_emb, self.enc_mask, active_layers=active_layers)
-
-		encoder_zt_logits = self.encoder_dense_zt(self.enc_output)
-		zt = Softmax()(encoder_zt_logits)
-		self.zt = zt
-
-		self.model = Model(enc_seq_input, zt)
-
-		'''sampling'''
-		encoder_sampled_zt = Lambda(lambda x: tfp.distributions.Sample(tfp.distributions.Categorical(x)).sample(), name = 'encoder_sampled_zt')(zt)
-		self.encoder_sampled_zt = encoder_sampled_zt
-
-		'''Decoder'''
-		self.dec_seq_input = encoder_sampled_zt
-		self.dec_seq  = Lambda(lambda x:x[:,:], name='self.dec_seq')(self.dec_seq_input)
-		self.delay_mask = Lambda(lambda x: K.concatenate([x[:,1:], tf.expand_dims(x[:,-1], axis=-1)]), name='dec_delay_mask')(self.enc_mask) # repeat the last element
-		dec_delay_zt = Lambda(lambda x: K.concatenate([x[:,1:], tf.expand_dims(x[:,-1], axis=-1)]), name='dec_delay_zt')(self.dec_seq_input) # repeat the last element
-		dec_delay_time = Lambda(lambda x: K.concatenate([x[:,1:], tf.expand_dims(x[:,-1], axis=-1)]), name='dec_delay_time')(self.enc_time)
-		self.dec_delay_zt = dec_delay_zt
-
-		self.mu_zt = self.embedding_zt(self.dec_seq)
-		# self.sigma_zt = self.embedding_sigma_zt(self.dec_seq)
-		
-		dec_emb = add_layer([self.mu_zt, self.pos_emb(dec_delay_time, pos_input=True)]) # Here set pos_input=True means input position to calculate positional embeddings
-		dec_emb = self.mu_zt
-
-		# Here use self.enc_mask to generate mask
-		dec_output = self.decoder(dec_emb, self.enc_mask, self.enc_mask, self.enc_output, active_layers=active_layers) 
-		self.dec_output = dec_output
-
+		self.enc_output, self.atts = self.encoder(enc_emb, self.enc_mask, active_layers=active_layers, return_att=True)
+`	`
 		'''Prediction functions'''
 		# self.predict_delay_zt_logits = add_layer([dec_output, self.pos_emb(dec_delay_time, pos_input=True)])
 		self.predict_delay_zt_logits = dec_output # Here I do not count temporal information
