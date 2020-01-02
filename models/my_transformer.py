@@ -7,12 +7,12 @@ from keras.initializers import *
 import tensorflow as tf
 tfe = tf.contrib.eager
 import tensorflow_probability as tfp
-from keras.optimizers import RAdam, SGD
+from keras.optimizers import Adam, SGD
 from keras.losses import mean_squared_error, categorical_crossentropy
 from keras.utils import np_utils
 import keras.regularizers as regularizers
 from keras_radam import RAdam
-from qlayer import QLayer
+from models.qlayer import QLayer
 
 try:
 	from tqdm import tqdm
@@ -518,7 +518,7 @@ class Transformer:
 		enc_emb = self.emb_dropout(enc_emb)
 		self.enc_emb = enc_emb
 		self.enc_output, self.atts = self.encoder(enc_emb, self.enc_mask, active_layers=active_layers, return_att=True)
-`	`
+	
 		'''Prediction functions'''
 		# self.predict_delay_zt_logits = add_layer([dec_output, self.pos_emb(dec_delay_time, pos_input=True)])
 		self.predict_delay_zt_logits = dec_output # Here I do not count temporal information

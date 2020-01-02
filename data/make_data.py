@@ -69,6 +69,7 @@ def generate_trajectory(num_states=3,
                         P_trans = np.array([[0.9, 0.1, 0.06], 
                                             [0.6, 0.1, 0.3], 
                                             [0.1, 0.8, 0.1]]),
+                        time = False,
                         P_0=[0.5, 0.3, 0.2],
                         mu_=[-10, 5, 10],
                         var_=[0.5, 1, 1.5]):
@@ -106,7 +107,10 @@ def generate_trajectory(num_states=3,
         a_.append(a_new)
 
         X_new = np.array(X_new)
-        X_new = np.hstack([np.arange(len(X_new)).reshape(-1,1), X_new])
+
+        if time == True:
+            X_new = np.hstack([np.arange(len(X_new)).reshape(-1,1), X_new])
+        
         X_.append(np.array(X_new))
      
     return X_, S_       
