@@ -636,6 +636,8 @@ class LRSchedulerPerStep(Callback):
 add_layer = Lambda(lambda x:x[0]+x[1], output_shape=lambda x:x[0])
 # use this because keras may get wrong shapes with Add()([])
 
+
+
 class QANet_ConvBlock:
 	def __init__(self, dim, n_conv=2, kernel_size=7, dropout=0.1):
 		self.convs = [SeparableConv1D(dim, kernel_size, activation='relu', padding='same') for _ in range(n_conv)]

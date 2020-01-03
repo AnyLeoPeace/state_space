@@ -3,35 +3,52 @@ from keras.models import Model
 from keras import backend as K
 from keras.layers import *
 from models.SeqModels import *
+from models.original_transformer import *
+from keras_transformer.transformer import *
 
 class TranModel():
 
     def __init__(self, len_limit = 50, time_limit = 50, \
-			  d_data = 16, d_model=64, d_inner_hid=64, \
-			  n_head=4, layers=2, dropout=0.1, \
-			  tem_dim = 0, num_states = 3, num_hidden_trans_layer = 2):
-		'''
-		num_hidden_trans_layer: how many layers to transform ht to xt
-		'''
+              d_data = 16, d_model=64, d_inner_hid=64, \
+              n_head=4, layers=2, dropout=0.1, \
+              tem_dim = 0, num_states = 3):
+        '''
+        num_hidden_trans_layer: how many layers to transform ht to xt
+        '''
 
-		self.len_limit = len_limit
-		self.time_limit = len_limit
-		self.d_model = d_model
-		self.d_data = d_data
-		self.layers = layers
-		self.num_states = num_states
+        self.len_limit = len_limit
+        self.time_limit = time_limit
+        self.d_model = d_model
+        self.d_data = d_data
+        self.layers = layers
+        self.num_states = num_states
+        self.dropout = dropout
+        self.n_head = n_head
 
-    def build_transformer_model(self, confidence_penalty_weight = 0.1):
-
+    def build_transformer_model(self, class_weights, confidence_penalty_weight = 0.1):
+        class_weights = tf.convert_to_tensor(class_weights, dtype='float32')
+        
         # Input
         input_seq = Input(shape=(self.len_limit, self.d_data))
-        input_time = Input(shape=(self.maximum_seq_length, ))
-        input_states = Input(shape=(self.maximum_seq_length, ), dtype='int32')
-        mask = Lambda(lambda x:tf.cast(tf.reduce_any(K.not_equal(x, 0), axis=-1), 'float32')[:,1:], name = 'input_mask')(input_seq)
+        input_time = Input(shape=(self.len_limit, ))
+        input_states = Input(shape=(self.len_limit, self.num_states), dtype='int32')
+        input_predict_mask = Input(shape=(self.len_limit, ), dtype='bool') # Where to predict
+        seq_mask = Lambda(lambda x:tf.cast(tf.reduce_any(K.not_equal(x, 0), axis=-1), 'bool'), name = 'seq_mask')(input_seq)
 
         # Embedding
-        embed_layer = TimeDistributed(Dense(d_model,name = 'emb_dense'))
-        pos_emb = PosEncodingLayer(self.maximum_seq_length, d_model)
+        embed_layer = TimeDistributed(Dense(self.d_model,name = 'emb_dense'))
+        pos_emb = PosEncodingLayer(self.time_limit, self.d_model)
+        # pos_emb = Embedding(self.time_limit, self.d_model)
+        unk_emb_layer = Embedding(2, self.d_model)
+
+        # Covert future visits to <UNKNOWN>
+        def convert(inputs):
+            seq, mask = inputs
+            unk_emb = unk_emb_layer(tf.cast(mask,'int32'))
+            seq = tf.where(tf.transpose(K.repeat(mask,self.d_model), perm=[0,2,1]), unk_emb, seq)
+            return seq            
+
+        unk_convert_layer = Lambda(convert)
 
         # Output
         output_softmax_layer = Softmax(name='prediction')
@@ -40,42 +57,50 @@ class TranModel():
 
         # Build
         next_step_input = embed_layer(input_seq)
+        next_step_input = unk_convert_layer([next_step_input, input_predict_mask])
 
-        next_step_input = add_layer([next_step_input, pos_emb(input_time, pos_input=True)])
+        next_step_input = add_layer([next_step_input, pos_emb(input_time, pos_input = True)])
+        # next_step_input = Concatenate()([next_step_input, pos_emb(input_time, pos_input = True)])
 
-        for i in range(layers):
+        for i in range(self.layers):
             next_step_input = TransformerBlock(
-                                name='transformer' + str(i), n_head=n_head,
-                                residual_dropout=dropout,
-                                attention_dropout=dropout,
-                                use_masking=True,
+                                name='transformer' + str(i), num_heads=self.n_head,
+                                residual_dropout=self.dropout,
+                                attention_dropout=self.dropout,
+                                use_masking=False,
                                 vanilla_wiring=True)(next_step_input)
         
         logits = dense_layer(next_step_input)
         pred = output_softmax_layer(logits)
 
-        model = Model(inputs=[input_seq, input_time, input_states], outputs=pred)
 
+        model = Model(inputs=[input_seq, input_time, input_states, input_predict_mask], outputs=pred)
 
-        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels = input_states[:,1:], logits = dense_layer.output[:,:-1])
+        # mask = tf.math.logical_or(input_predict_mask, seq_mask)
+        mask = input_predict_mask
+        mask = tf.cast(mask, 'float32')
+        loss = tf.cast(input_states, 'float32') * tf.log(pred + 1e-7)
+
+        # loss = K.dot(loss, class_weights)
+        loss = -tf.reduce_sum(loss, axis=-1)
         loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
         loss = K.mean(loss)
 
     
-        corr = K.cast(K.equal(K.cast(K.argmax(pred[:,:-1],axis=-1), 'int32'), input_states[:,1:]), 'float32')
+        corr = K.cast(K.equal(K.cast(K.argmax(pred,axis=-1), 'int32'), K.cast(K.argmax(input_states, axis=-1),'int32')), 'float32')
         corr = K.sum(corr * mask, -1) / K.sum(mask, -1)
 
 
-        confidence_penalty = confidence_penalty_weight * K.sum(pred[:,:-1] * K.log(pred[:,:-1]), axis=-1)
+        confidence_penalty = confidence_penalty_weight * K.sum(pred * K.log(pred), axis=-1)
         confidence_penalty = tf.reduce_sum(confidence_penalty * mask, -1) / tf.reduce_sum(mask, -1)
         confidence_penalty = K.mean(confidence_penalty)
 
         model.add_loss(confidence_penalty)
         model.add_loss(loss)
 
-        model.add_metric(corr, 'acc')
+        model.add_metric(corr, 'predict_acc')
 
-        self.transformer_model = model
+        self.model = model
         return model
 
 
@@ -110,7 +135,7 @@ class TranModel():
         for k in range(len(X)):
             self.X_normalized.append(self.normalizer.transform(X[k])) 
 
-        self.X_, self.state_update = padd_data(self.X_normalized, self.maximum_seq_length), padd_data(self.state_trajectories_, self.maximum_seq_length)
+        self.X_, self.state_update = padd_data(self.X_normalized, self.len_limit), padd_data(self.state_trajectories_, self.len_limit)
         
         # Baseline transition matrix
         # Calculate the initial transition probability

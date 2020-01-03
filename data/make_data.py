@@ -42,7 +42,7 @@ warnings.filterwarnings("ignore")
 import os
 from pathlib import Path
 import shutil
-
+import random
 
 def get_attention_weights(seqlength, alpha, reverse_mode):
 
@@ -58,7 +58,6 @@ def get_attention_weights(seqlength, alpha, reverse_mode):
         
     return weights_ 
 
-
 def generate_trajectory(num_states=3, 
                         Num_observations=10, 
                         Num_samples=1000, 
@@ -69,7 +68,6 @@ def generate_trajectory(num_states=3,
                         P_trans = np.array([[0.9, 0.1, 0.06], 
                                             [0.6, 0.1, 0.3], 
                                             [0.1, 0.8, 0.1]]),
-                        time = False,
                         P_0=[0.5, 0.3, 0.2],
                         mu_=[-10, 5, 10],
                         var_=[0.5, 1, 1.5]):
@@ -105,14 +103,76 @@ def generate_trajectory(num_states=3,
     
         S_.append(S_new)
         a_.append(a_new)
+        X_.append(np.array(X_new))
+     
+    return X_, S_    
 
-        X_new = np.array(X_new)
 
-        if time == True:
-            X_new = np.hstack([np.arange(len(X_new)).reshape(-1,1), X_new])
+
+def generate_trajectory_new(num_states=3, 
+                        Num_observations=10, 
+                        Num_samples=1000, 
+                        Max_seq=20, 
+                        Min_seq=3,
+                        Max_length = 50,
+                        alpha = 1,
+                        reverse_mode=False,
+                        P_trans = np.array([[0.9, 0.1, 0.01], 
+                                            [0.3, 0.6, 0.1], 
+                                            [0.1, 0.8, 0.1]]),
+                        P_0=[0.95, 0.05, 0],
+                        mu_=[-10, 5, 10],
+                        var_=[0.5, 1, 1.5]):
+    '''
+    alpha: the attention parameter
+    beta: the temporal parameter 
+    '''
+
+    X_  = []
+    S_  = []
+    a_  = []
+    time_ = []
+    mask_ = []
+
+    
+    for k in range(Num_samples):
+    
+        seq_len = np.random.randint(Min_seq, Max_seq-1)
+        seq_select = random.sample(list(np.arange(Max_length-1)+1), seq_len-1)
+        seq_mask = np.zeros(Max_length)
+        seq_mask[seq_select] = True
+        seq_mask[0] = True
+        time = np.where(seq_mask)[0]
+        mask_.append(seq_mask)
+        time_.append(time)
+
+
+        S_new   = []
+        a_new   = []
+        X_new   = []
+    
+        for u in range(Max_length):
+        
+            if u == 0:
+            
+                S_new.append(np.random.choice(num_states, 1, p=P_0)[0])
+            
+            else:
+
+                weights_    = get_attention_weights(u + 1, alpha, reverse_mode)            
+                P_trans_new = np.sum(np.array([P_trans[S_new[m], :] * weights_[m] for m in range(len(S_new))]), axis=0)
+                P_trans_new = P_trans_new/np.sum(P_trans_new)
+            
+                S_new.append(np.random.choice(num_states, 1, p=P_trans_new)[0])
+                a_new.append(weights_)
+            
+            X_new.append((mu_[S_new[-1]] + var_[S_new[-1]] * np.random.normal(0, 1, (1, Num_observations))).reshape(-1,))
+            
+    
+        S_.append(np.array(S_new)[time])
+        a_.append(a_new)
+        X_new = np.array(X_new)[time]
         
         X_.append(np.array(X_new))
      
-    return X_, S_       
-
-
+    return X_, S_ , time_   

@@ -1,10 +1,10 @@
 ### Setting up the experiment 
 from data.make_data import generate_trajectory
-from models.SeqModels import *
+from models.origin_seq import attentive_state_space_model
 from keras import optimizers, losses
 import keras.backend as K
 import numpy as np
-from keras_radam import RAdam
+from sklearn.metrics import f1_score
 
 X_observations, true_states = generate_trajectory(num_states=3, 
                                                   Num_observations=10, 
@@ -14,19 +14,14 @@ X_observations, true_states = generate_trajectory(num_states=3,
                                                   alpha=100,
                                                   reverse_mode=False)
 
-data = np.load('./data/syn_data_new.npy', allow_pickle = True).item()
-X_observations = data['X']
-true_states = data['states']
-
-### Training attentive state-space models
 model = attentive_state_space_model(num_states=3,
                               maximum_seq_length=30, 
                               input_dim=10, 
                               rnn_type='LSTM',
                               latent=True,
                               generative=True,
-                              num_iterations=50, 
-                              num_epochs=5, 
+                              num_iterations=100, 
+                              num_epochs=500, 
                               batch_size=100, 
                               learning_rate=5*1e-4, 
                               num_rnn_hidden=100, 
@@ -37,8 +32,6 @@ model = attentive_state_space_model(num_states=3,
 
 
 model.fit(X_observations)
-
-
 state_inference, expected_observations, attention = model.predict(X_observations)
 
 corr = 0
@@ -55,4 +48,4 @@ for index, item in enumerate(state_inference):
     l += len(seq)
 
 print('Acc :', corr/l)
-print('F1 Score :',f1_score(all_true, all_seq, average='macro'))
+print('F1 Score :',f1_score(all_true, all_seq, average='micro'))
