@@ -33,3 +33,11 @@ def padd_data(X, padd_length):
     X_padded      = np.array(X_padded)
 
     return X_padded
+
+
+def label_exchange(a,b, seq):
+    ma = seq == a
+    mb = seq == b
+    seq[ma] = b
+    seq[mb] = a
+    return seq

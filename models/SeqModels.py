@@ -42,6 +42,7 @@ warnings.filterwarnings("ignore")
 
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from scipy.stats import multivariate_normal
+
 from hmmlearn import hmm
 
 
@@ -663,6 +664,31 @@ class attentive_state_space_model:
 
         self.stochastic_variational_inference(self.X_normalized)
 
+    def prepare_data(self, X):
+        self.state_trajectories_ = []
+          
+        # Initial predict using GM
+        state_inferences_init  = [np.argmax(self.init_states.predict_proba(X[k]), axis=1) for k in range(len(X))]
+        self.all_states        = state_inferences_init
+
+        for v in range(len(state_inferences_init)):
+            
+            state_list = [state_to_array(state_inferences_init[v][k], self.num_states) for k in range(len(state_inferences_init[v]))] # Convert label to one-hot array
+            delayed_traject = np.vstack((np.array(state_list)[1:, :], np.array(state_list)[-1, :]))
+            traject = np.array(state_list)
+            '''NOTE: Here I do not use delayde traj'''
+            self.state_trajectories_.append(traject)
+            
+
+        self.X_normalized  = []
+
+        for k in range(len(X)):
+            self.X_normalized.append(self.normalizer.transform(X[k])) 
+
+        self.X_, self.state_update = padd_data(self.X_normalized, self.len_limit), padd_data(self.state_trajectories_, self.len_limit)
+
+        return(self.X_, self.state_update)
+        
         
     def stochastic_variational_inference(self, X, T=None):
         
@@ -735,7 +761,7 @@ class attentive_state_space_model:
                 
                 Loss = sess.run(self.ELBO, feed_dict=train_dict)
                 
-                log_likelihood_ = np.array([self.get_likelihood(batch_train[k,:,:], batch_preds[k,:,:]) for k in range(batch_train.shape[0])]) 
+                log_likelihood_ = np.array([self.get_likelihood(self.normalizer.inverse_transform(batch_train[k,:,:], copy=True), batch_preds[k,:,:]) for k in range(batch_train.shape[0])]) 
                 log_likelihood_ = np.sum(log_likelihood_)/self.batch_size
                 log_likelihood.append(log_likelihood_)
 

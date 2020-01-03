@@ -11,7 +11,7 @@ class TranModel():
     def __init__(self, len_limit = 50, time_limit = 50, \
               d_data = 16, d_model=64, d_inner_hid=64, \
               n_head=4, layers=2, dropout=0.1, \
-              tem_dim = 0, num_states = 3):
+              num_states = 3):
         '''
         num_hidden_trans_layer: how many layers to transform ht to xt
         '''
@@ -50,6 +50,10 @@ class TranModel():
 
         unk_convert_layer = Lambda(convert)
 
+        def inverse_norm(x):
+            return (x * self.normalizer.scale_) + (x * self.normalizer.mean_)
+
+        
         # Output
         output_softmax_layer = Softmax(name='prediction')
         dense_layer = TimeDistributed(Dense(self.num_states,name = 'dense'))
@@ -86,7 +90,7 @@ class TranModel():
         loss = tf.reduce_sum(loss * mask, -1) / tf.reduce_sum(mask, -1)
         loss = K.mean(loss)
 
-    
+        # Metric Acc
         corr = K.cast(K.equal(K.cast(K.argmax(pred,axis=-1), 'int32'), K.cast(K.argmax(input_states, axis=-1),'int32')), 'float32')
         corr = K.sum(corr * mask, -1) / K.sum(mask, -1)
 
@@ -111,11 +115,17 @@ class TranModel():
         
         self.init_states.fit(np.concatenate(X).reshape((-1, self.d_data))) # Similar to KMeans init
 
-    def prepare_data(self,X):
+
+    def prepare_data(self,X, training = True):
         
         self.state_trajectories_ = []
         
-        self.initialize_hidden_states(X)
+        if training:
+            
+            self.initialize_hidden_states(X)
+            self.normalizer   = StandardScaler()
+            self.normalizer.fit(np.concatenate(X))
+        
         # Initial predict using GM
         state_inferences_init  = [np.argmax(self.init_states.predict_proba(X[k]), axis=1) for k in range(len(X))]
         self.all_states        = state_inferences_init
@@ -124,11 +134,10 @@ class TranModel():
             
             state_list = [state_to_array(state_inferences_init[v][k], self.num_states) for k in range(len(state_inferences_init[v]))] # Convert label to one-hot array
             delayed_traject = np.vstack((np.array(state_list)[1:, :], np.array(state_list)[-1, :]))
+            traject = np.array(state_list)
+            '''NOTE: Here I do not use delayde traj'''
+            self.state_trajectories_.append(traject)
             
-            self.state_trajectories_.append(delayed_traject)
-            
-        self.normalizer   = StandardScaler()
-        self.normalizer.fit(np.concatenate(X))
 
         self.X_normalized  = []
 
@@ -137,34 +146,39 @@ class TranModel():
 
         self.X_, self.state_update = padd_data(self.X_normalized, self.len_limit), padd_data(self.state_trajectories_, self.len_limit)
         
-        # Baseline transition matrix
-        # Calculate the initial transition probability
-        initial_states = np.array([self.all_states[k][0] for k in range(len(self.all_states))]) # the first state for each sample
-        init_probs     = [np.where(initial_states==k)[0].shape[0] / len(initial_states) for k in range(self.num_states)] # prior distribution for states
 
-        transits   = np.zeros((self.num_states, self.num_states))
-        each_state = np.zeros(self.num_states)
+        if training:
+
+            # Baseline transition matrix
+            # Calculate the initial transition probability
+            initial_states = np.array([self.all_states[k][0] for k in range(len(self.all_states))]) # the first state for each sample
+            init_probs     = [np.where(initial_states==k)[0].shape[0] / len(initial_states) for k in range(self.num_states)] # prior distribution for states
+
+            transits   = np.zeros((self.num_states, self.num_states))
+            each_state = np.zeros(self.num_states)
+            
+            for _ in range(len(self.all_states)):
+            
+                new_trans, new_each_state = get_transitions(self.all_states[_], self.num_states)
         
-        for _ in range(len(self.all_states)):
+                transits   += new_trans
+                each_state += new_each_state
         
-            new_trans, new_each_state = get_transitions(self.all_states[_], self.num_states)
-    
-            transits   += new_trans
-            each_state += new_each_state
-    
-        for _ in range(self.num_states):
-    
-            transits[_, :] = transits[_, :] / each_state[_]
-            transits[_, :] = transits[_, :] / np.sum(transits[_, :])
-    
-        self.initial_probabilities = np.array(init_probs)
-        self.transition_matrix     = np.array(transits)
+            for _ in range(self.num_states):
         
-        # -----------------------------------------------------------
-        # Observational distribution
-        # -----------------------------------------------------------
-        
-        self.state_means  = self.init_states.means_
-        self.state_covars = self.init_states.covariances_   
+                transits[_, :] = transits[_, :] / each_state[_]
+                transits[_, :] = transits[_, :] / np.sum(transits[_, :])
+    
+            self.initial_probabilities = np.array(init_probs)
+            self.transition_matrix     = np.array(transits)
+            
+            # -----------------------------------------------------------
+            # Observational distribution
+            # -----------------------------------------------------------
+            
+            self.state_means  = self.init_states.means_
+            self.state_covars = self.init_states.covariances_   
 
         return self.X_, self.state_update 
+
+        
