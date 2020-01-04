@@ -120,9 +120,9 @@ def generate_trajectory_new(num_states=3,
                         P_trans = np.array([[0.9, 0.1, 0.01], 
                                             [0.3, 0.6, 0.1], 
                                             [0.1, 0.8, 0.1]]),
-                        P_0=[1, 0, 0],
+                        P_0=[0.9, 0.1, 0],
                         mu_=[-10, 5, 10],
-                        var_=[0.5, 1, 1.5]):
+                        var_=[1, 1, 1]):
     '''
     alpha: the attention parameter
     beta: the temporal parameter 
@@ -133,6 +133,7 @@ def generate_trajectory_new(num_states=3,
     a_  = []
     time_ = []
     mask_ = []
+    total = 0
 
     
     for k in range(Num_samples):
@@ -173,9 +174,10 @@ def generate_trajectory_new(num_states=3,
         a_.append(a_new)
         X_new = np.array(X_new)[time]
         
+        total += len(time)
         X_.append(np.array(X_new))
      
-    return X_, S_ , time_   
+    return X_, S_ , time_, total  
 
 
 def generate_trajectory_final(num_states=3, 
@@ -190,9 +192,9 @@ def generate_trajectory_final(num_states=3,
                         P_trans = np.array([[0.9, 0.1, 0.01], 
                                             [0.3, 0.6, 0.1], 
                                             [0.1, 0.8, 0.1]]),
-                        P_0=[1, 0, 0],
-                        mu_=[-10, 0, 10],
-                        var_=[1, 1, 1]):
+                        P_0=[0.9, 0.1, 0],
+                        mu_=[-10, 5, 10],
+                        var_=[0.5, 1, 1.5]):
     '''
     Max_length: the time length
     Proportion: the ratio between actual visits and all possible visits
@@ -205,7 +207,7 @@ def generate_trajectory_final(num_states=3,
 
     # All visit positions
     num_pos = Max_length * Num_samples
-    pos_ = random.sample(list(np.arange(num_pos)), int(num_pos) * proportion)
+    pos_ = random.sample(list(np.arange(num_pos)), int(num_pos * proportion))
     mask_ = np.zeros(num_pos, bool)
     mask_[pos_] = True
     mask_ = mask_.reshape((Num_samples, Max_length))
@@ -221,7 +223,10 @@ def generate_trajectory_final(num_states=3,
             time = np.unique(list(time) + [np.random.randint(1, Max_length)])
         
         while len(time) > Max_seq:
-            time = time[:-1]
+            bad = random.sample(time,1)
+            seq_mask[bad] = False
+            seq_mask[0] = True
+            time = np.where(seq_mask)[0]
 
         S_new   = []
         X_new   = []

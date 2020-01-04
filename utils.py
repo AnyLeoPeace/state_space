@@ -40,8 +40,8 @@ def label_exchange(labels, preds, labels_mean, preds_mean, num_states = 3):
     Input the labels sequence and the pred sequence
     Exchange the labels alignment to maximize the acc
     '''
-    dis = distance_matrix(labels_mean.mean(axis=-1), preds_mean.mean(axis=-1))
-    pos_a,pos_b = np.where(abs(dis) < 2)
+    dis = distance_matrix(labels_mean.reshape(-1,1), preds_mean.reshape(-1,1))
+    pos_a,pos_b = np.where(abs(dis) < 1)
     new_labels = np.copy(labels)
 
     for i in range(num_states):
@@ -49,5 +49,5 @@ def label_exchange(labels, preds, labels_mean, preds_mean, num_states = 3):
         b = pos_b[i]
         ma = labels == a
         new_labels[ma] = b
-
+        
     return new_labels

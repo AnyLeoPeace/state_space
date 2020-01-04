@@ -633,7 +633,7 @@ class LRSchedulerPerStep(Callback):
 		lr = self.basic * min(self.step_num**-0.5, self.step_num*self.warm)
 		K.set_value(self.model.optimizer.lr, lr)
 
-add_layer = Lambda(lambda x:x[0]+x[1], output_shape=lambda x:x[0])
+# add_layer = Lambda(lambda x:x[0]+x[1], output_shape=lambda x:x[0])
 # use this because keras may get wrong shapes with Add()([])
 
 

@@ -133,3 +133,4 @@ mlaim*
 checkpoint
 attentive_state_space*
 *.ckpt
+*results

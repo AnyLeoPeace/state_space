@@ -16,19 +16,19 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 max_seq = 20
 min_seq = 10
 max_length = 30
-alpha = 500
+alpha = 100
 
-X_observations, true_states, X_time = generate_trajectory_new(num_states=3, 
-                                                    Num_observations=10, 
-                                                    Num_samples=1000, 
-                                                    Max_seq=max_seq, 
-                                                    Min_seq=min_seq, 
-                                                    Max_length=max_length,
-                                                    alpha=alpha,
-                                                    P_trans = np.array([[0.85, 0.1, 0.05], 
+# X_observations, true_states, X_time = generate_trajectory_new(num_states=3, 
+                                                    # Num_observations=10, 
+                                                    # Num_samples=1000, 
+                                                    # Max_seq=max_seq, 
+                                                    # Min_seq=min_seq, 
+                                                    # Max_length=max_length,
+                                                    # alpha=alpha,
+                                                    # P_trans = np.array([[0.85, 0.1, 0.05], 
                                                                         [0.1, 0.7, 0.2], 
                                                                         [0, 0.2, 0.8]]),
-                                                    reverse_mode=False)
+                                                    # reverse_mode=False)
 
 np.save('./data/syn_data_' + str(max_seq) + '_'  + str(min_seq) + '_' + str(max_length) + '_' + str(alpha),{'X':X_observations, 'states':true_states, 'time':X_time})
 
@@ -114,7 +114,7 @@ X_padded_eval,states_padded_eval = trans.prepare_data(X_observations_eval, train
 eval_X, eval_time, eval_states, eval_masks = get_train_data(X_padded_eval, states_padded_eval, X_time_eval)
 
 
-his = trans.model.fit([train_X, train_time, train_states, train_masks], batch_size=100, epochs=100, verbose=2)
+his = trans.model.fit([train_X, train_time, train_states, train_masks], batch_size=100, epochs=50, verbose=2)
 
 # for i in range(0,100):
     # his = trans.model.fit([train_X, train_time, train_states, train_masks], batch_size=100, epochs=i+1, initial_epoch = i, verbose=2)
@@ -122,7 +122,7 @@ his = trans.model.fit([train_X, train_time, train_states, train_masks], batch_si
     # print('Val Acc :', acc)
 
 
-trans.model.save_weights('./save/my_model_weights.ckpt')
+# trans.model.save_weights('./save/my_model_weights.ckpt')
 
 
 '''Evaluation'''
@@ -158,9 +158,10 @@ for item in s:
 all_true = np.array(all_true)
 all_seq = np.array(all_seq)
 
-print('Acc :',(all_true == all_seq).mean())
-print('Acc :',(label_exchange(0,2,all_true) == all_seq).mean())
-print('F1 Score :',f1_score(all_true, all_seq, average='macro'))
+all_true_ = label_exchange(all_true, all_seq, np.array([-10,5,10]), trans.state_means.mean(axis=-1))
+
+print('Acc :',(all_true_ == all_seq).mean())
+print('F1 Score :',f1_score(all_true_, all_seq, average='macro'))
 
 
 # log likelihood

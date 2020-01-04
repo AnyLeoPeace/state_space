@@ -1,4 +1,8 @@
-### Setting up the experiment 
+### Setting up the experiment
+import os
+
+os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 from data.make_data import *
 import numpy as np
@@ -10,12 +14,32 @@ from sklearn.metrics import f1_score
 from scipy.stats import multivariate_normal
 from keras.utils import np_utils
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1' 
+import logging
+
+# tf.logging.set_verbosity(tf.logging.ERROR)
+# tf.get_logger().setLevel('INFO')
+
+logging.basicConfig(level=logging.DEBUG,
+                format='%(asctime)s %(message)s',
+                datefmt='%a, %d %b %Y %H:%M:%S',
+                filename='log',
+                filemode='w')
+
+
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+formatter = logging.Formatter('%(message)s')
+console.setFormatter(formatter)
+logging.getLogger('').addHandler(console)
+
+data_mean = np.array([-10,0,10])
+train_epoch = 100
+verbose = False
 
 '''Generate data'''
-def generate_data(max_seq = 25, min_seq = 5, max_length = 30, alpha = 100, proportion = 0.5):
+def generate_data_mode_1(max_seq = 25, min_seq = 5, max_length = 30, alpha = 100, proportion = 0.5):
 
-    X_observations, true_states, X_time, total_visit = generate_trajectory_new(num_states=3, 
+    X_observations, true_states, X_time, total_visit = generate_trajectory_final(num_states=3, 
                                                         Num_observations=10, 
                                                         Num_samples=1000, 
                                                         Max_seq=max_seq, 
@@ -26,6 +50,25 @@ def generate_data(max_seq = 25, min_seq = 5, max_length = 30, alpha = 100, propo
                                                         P_trans = np.array([[0.85, 0.1, 0.05], 
                                                                             [0.1, 0.7, 0.2], 
                                                                             [0, 0.2, 0.8]]),
+                                                        mu_ = data_mean,
+                                                        reverse_mode=False)
+    
+    return X_observations, true_states, X_time, total_visit
+
+
+def generate_data_mode_2(max_seq = 20, min_seq = 10, max_length = 30, alpha = 100):
+
+    X_observations, true_states, X_time, total_visit = generate_trajectory_new(num_states=3, 
+                                                        Num_observations=10, 
+                                                        Num_samples=1000, 
+                                                        Max_seq=max_seq, 
+                                                        Min_seq=min_seq, 
+                                                        Max_length=max_length,
+                                                        alpha=alpha,
+                                                        P_trans = np.array([[0.85, 0.1, 0.05], 
+                                                                            [0.1, 0.7, 0.2], 
+                                                                            [0, 0.2, 0.8]]),
+                                                        mu_ = data_mean,
                                                         reverse_mode=False)
     
     return X_observations, true_states, X_time, total_visit
@@ -75,10 +118,14 @@ def get_train_data(X_padded, states_padded, X_time, len_limit = 25, time_limit =
     return train_X, train_time, train_states, train_masks
 
 
+
+
+
 def train_evaluate_my_model(train_data, eval_data, save = None):
     '''
     Input data directly comes from generate_data_final
     '''
+    K.clear_session()
 
     # Get data
     X_observations, true_states, X_time, total_visit = train_data
@@ -100,7 +147,7 @@ def train_evaluate_my_model(train_data, eval_data, save = None):
     eval_lens = (X_padded_eval[:,:].mean(axis=-1) != 0).sum(axis=-1)
 
     # Train
-    his = trans.model.fit([train_X, train_time, train_states, train_masks], batch_size=100, epochs=100, verbose=0)
+    his = trans.model.fit([train_X, train_time, train_states, train_masks], batch_size=100, epochs=train_epoch, verbose=verbose)
 
     if save is not None:
         trans.model.save_weights(save + 'my_model_weights.ckpt')
@@ -145,24 +192,24 @@ def train_evaluate_my_model(train_data, eval_data, save = None):
 
 
     all_true, all_seq = get_eval_preds()
-    all_true_ = label_exchange(all_true, all_seq, [-10,0,10], trans.state_means.mean(axis=-1))
+    all_true_ = label_exchange(all_true, all_seq, data_mean, trans.state_means.mean(axis=-1))
 
-    acc = (all_true == all_seq).mean()
+    acc = (all_true_ == all_seq).mean()
     f1 = f1_score(all_true_, all_seq, average='macro')
     lks = evaluate_likelyhood(all_seq)
 
-    print('Transformer Model')
-    print('Acc :', acc)
-    print('F1 Score :', f1)
-    print('Log likelyhood :', f1)
-    print('')
+    logging.info('Transformer Model')
+    logging.info('Acc : %2.4f'% acc)
+    logging.info('F1 Score : %2.4f'% f1)
+    logging.info('Log likelyhood : %2.4f'%lks)
+    logging.info('')
+
     return acc, f1, lks
 
 
 
 def train_evaluate_att_model(train_data, eval_data):
 
-    tf.reset_default_graph()
 
     # Get data
     X_observations, true_states, X_time, total_visit = train_data
@@ -176,15 +223,15 @@ def train_evaluate_att_model(train_data, eval_data):
                                 latent=True,
                                 generative=True,
                                 num_iterations=50, 
-                                num_epochs=100, 
+                                num_epochs=train_epoch, 
                                 batch_size=100, 
-                                learning_rate=5*1e-4, 
+                                learning_rate=1e-3, 
                                 num_rnn_hidden=100, 
                                 num_rnn_layers=1,
                                 dropout_keep_prob=None,
                                 num_out_hidden=100, 
                                 num_out_layers=1,
-                                verbosity = False)
+                                verbosity = verbose)
 
     # Train
     model.fit(X_observations)
@@ -219,39 +266,78 @@ def train_evaluate_att_model(train_data, eval_data):
         return lks
     
     all_true, all_seq = get_eval_preds()
-    all_true_ = label_exchange(all_true, all_seq, [-10,0,10], model.state_means.mean(axis=-1))
+    all_true_ = label_exchange(all_true, all_seq, data_mean, model.state_means.mean(axis=-1))
 
-    acc = (all_true == all_seq).mean()
+    acc = (all_true_ == all_seq).mean()
     f1 = f1_score(all_true_, all_seq, average='macro')
     lks = evaluate_likelyhood(all_seq)
 
-    print('Attentive Model')
-    print('Acc :', acc)
-    print('F1 Score :', f1)
-    print('Log likelyhood :', f1)
-    print('')
+    logging.info('Attentive Model')
+    logging.info('Acc : %2.4f'% acc)
+    logging.info('F1 Score : %2.4f'% f1)
+    logging.info('Log likelyhood : %2.4f'%lks)
+    logging.info('')
+
+
     return acc, f1, lks
 
 
 
 def main():
-    proportion = 0.5
 
-    train_data = generate_data(proportion)
-    eval_data = generate_data(proportion)
+    logging.info('Begining Comparing')
 
-    print('*'*40)
-    print('Design proportion', proportion)
-    print('Train proportion', train_data[-1] / 30*1000)
-    print('Test proportion', eval_data[-1] / 30*1000)
-    print('')
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
+    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-    trans_scores = train_evaluate_my_model(train_data, eval_data)
-    att_scores = train_evaluate_my_model(train_data, eval_data)
-    
-    print('*'*40)
+    for proportion in range(1,9):
+        proportion = proportion / 10
+
+        train_data = generate_data_mode_1(proportion=proportion)
+        eval_data = generate_data_mode_1(proportion=proportion)
+
+        total = 30*1000
+
+        logging.info('*'*40)
+        logging.info('Design proportion : %2.4f'% proportion)
+        logging.info('Train proportion : %2.4f'% (train_data[-1] / total))
+        logging.info('Test proportion : %2.4f'% (eval_data[-1] / total))
+        logging.info('')
+
+        # max_seq = 20
+        # min_seq = 10
+        # max_length = 30
+        # alpha = 100
+
+        # data = np.load('./data/syn_data_' + str(max_seq) + '_'  + str(min_seq) + '_' + str(max_length) + '_' + str(alpha) + '.npy', allow_pickle = True).item()
+        # X_observations = data['X']
+        # true_states = data['states']
+        # X_time = data['time']
+        # train_data = (X_observations, true_states, X_time, total)
 
 
+        # data_eval = np.load('./data/syn_data_eval' + str(max_seq) + '_'  + str(min_seq) + '_' + str(max_length) + '_' + str(alpha) + '.npy', allow_pickle = True).item()
+        # X_observations_eval = data_eval['X']
+        # true_states_eval = data_eval['states']
+        # X_time_eval = data_eval['time']
+        # eval_data = (X_observations_eval, true_states_eval, X_time_eval, total)
 
+        for i in range(5):
+
+            logging.info('Training Iteration %d' % (i+1))
+            logging.info('')
+
+            trans_scores = train_evaluate_my_model(train_data, eval_data)
+
+            # logging.info('Training Attentive model')
+            att_scores = train_evaluate_att_model(train_data, eval_data)
+
+            # np.save('./results/' + str(proportion) + '_'+str(i),{'trans':trans_scores, 'att':att_scores})
+        
+        logging.info('*'*40)
+
+
+if __name__ == '__main__':
+    main()
 
 

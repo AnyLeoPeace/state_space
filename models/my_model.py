@@ -3,7 +3,7 @@ from keras.models import Model
 from keras import backend as K
 from keras.layers import *
 from models.SeqModels import *
-from models.original_transformer import *
+from models.original_transformer import PosEncodingLayer
 from keras_transformer.transformer import *
 
 class TranModel():
@@ -26,6 +26,7 @@ class TranModel():
         self.n_head = n_head
 
     def build_transformer_model(self, class_weights = np.array([1,1,1]).reshape(-1,1), confidence_penalty_weight = 0.1):
+        add_layer = Lambda(lambda x:x[0]+x[1], output_shape=lambda x:x[0])
         class_weights = tf.convert_to_tensor(class_weights, dtype='float32')
         
         # Input
