@@ -1,8 +1,6 @@
 ### Setting up the experiment
-import os
-
-os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+import tensorflow as tf
+tf.logging.set_verbosity(tf.logging.ERROR)
 
 from data.make_data import *
 import numpy as np
@@ -125,7 +123,6 @@ def train_evaluate_my_model(train_data, eval_data, save = None):
     '''
     Input data directly comes from generate_data_final
     '''
-    K.clear_session()
 
     # Get data
     X_observations, true_states, X_time, total_visit = train_data
@@ -304,35 +301,15 @@ def main():
         logging.info('Test proportion : %2.4f'% (eval_data[-1] / total))
         logging.info('')
 
-        # max_seq = 20
-        # min_seq = 10
-        # max_length = 30
-        # alpha = 100
-
-        # data = np.load('./data/syn_data_' + str(max_seq) + '_'  + str(min_seq) + '_' + str(max_length) + '_' + str(alpha) + '.npy', allow_pickle = True).item()
-        # X_observations = data['X']
-        # true_states = data['states']
-        # X_time = data['time']
-        # train_data = (X_observations, true_states, X_time, total)
-
-
-        # data_eval = np.load('./data/syn_data_eval' + str(max_seq) + '_'  + str(min_seq) + '_' + str(max_length) + '_' + str(alpha) + '.npy', allow_pickle = True).item()
-        # X_observations_eval = data_eval['X']
-        # true_states_eval = data_eval['states']
-        # X_time_eval = data_eval['time']
-        # eval_data = (X_observations_eval, true_states_eval, X_time_eval, total)
-
         for i in range(5):
 
-            logging.info('Training Iteration %d' % (i+1))
+            logging.info('Compare Iteration %d' % (i+1)+'-'*20)
             logging.info('')
 
             trans_scores = train_evaluate_my_model(train_data, eval_data)
-
-            # logging.info('Training Attentive model')
             att_scores = train_evaluate_att_model(train_data, eval_data)
 
-            # np.save('./results/' + str(proportion) + '_'+str(i),{'trans':trans_scores, 'att':att_scores})
+            np.save('./results/proportion_' + str(proportion) + '_iteration_'+str(i),{'trans':trans_scores, 'att':att_scores})
         
         logging.info('*'*40)
 
