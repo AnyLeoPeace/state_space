@@ -35,7 +35,7 @@ train_epoch = 100
 verbose = False
 
 '''Generate data'''
-def generate_data_mode_1(max_seq = 25, min_seq = 5, max_length = 30, alpha = 100, proportion = 0.5):
+def generate_data_mode_1(max_seq = 25, min_seq = 5, max_length = 30, alpha = 100, proportion = 0.5, personalized = 0):
 
     X_observations, true_states, X_time, total_visit = generate_trajectory_final(num_states=3, 
                                                         Num_observations=10, 
@@ -45,6 +45,7 @@ def generate_data_mode_1(max_seq = 25, min_seq = 5, max_length = 30, alpha = 100
                                                         Max_length=max_length,
                                                         alpha=alpha,
                                                         proportion = proportion,
+                                                        personalized = personalized,
                                                         P_trans = np.array([[0.85, 0.1, 0.05], 
                                                                             [0.1, 0.7, 0.2], 
                                                                             [0, 0.2, 0.8]]),

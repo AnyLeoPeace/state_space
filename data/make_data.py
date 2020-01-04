@@ -188,6 +188,7 @@ def generate_trajectory_final(num_states=3,
                         Max_length = 50,
                         alpha = 1,
                         proportion = 0.5,
+                        personalized = 0,
                         reverse_mode=False,
                         P_trans = np.array([[0.9, 0.1, 0.01], 
                                             [0.3, 0.6, 0.1], 
@@ -215,6 +216,14 @@ def generate_trajectory_final(num_states=3,
     
     for k in range(Num_samples):
     
+        if personalized != 0:
+            # Generate a personalized effect on mu
+            shift = np.random.uniform(low=-personalized, high=personalized, size=(num_states,))
+            current_mu = mu_ + shift
+        else:
+            current_mu = mu_
+
+
         seq_mask = mask_[k]
         seq_mask[0] = True
         time = np.where(seq_mask)[0]
@@ -245,7 +254,7 @@ def generate_trajectory_final(num_states=3,
             
                 S_new.append(np.random.choice(num_states, 1, p=P_trans_new)[0])
             
-            X_new.append((mu_[S_new[-1]] + var_[S_new[-1]] * np.random.normal(0, 1, (1, Num_observations))).reshape(-1,))
+            X_new.append((current_mu[S_new[-1]] + var_[S_new[-1]] * np.random.normal(0, 1, (1, Num_observations))).reshape(-1,))
             
 
         S_.append(np.array(S_new)[time])
