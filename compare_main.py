@@ -200,7 +200,7 @@ def train_evaluate_my_model(train_data, eval_data, save = None):
         pred_dif = history_dif
 
         X_ = padd_data(X_observations_eval, trans.len_limit)[:,1:]
-        X_ = X_ - np.repeat(pred_dif, axis = 1, repeats = trans.model.len_limit)
+        X_ = X_ - np.repeat(pred_dif, axis = 1, repeats = trans.len_limit)
         X_ = X_.reshape(-1, 10)
 
         pred = np_utils.to_categorical(all_seq, num_classes= trans.num_states)
