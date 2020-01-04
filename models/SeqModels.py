@@ -89,7 +89,7 @@ class MultiPhasedLSTMCell(MultiRNNCell):
 
     def __init__(self, cells, state_is_tuple=True):
         
-        """Create a RNN cell composed sequentially of a number of RNNCells.
+        """Create a RNN cell composed sequentially of a number of 
 
         Args:
           cells: list of RNNCells that will be composed in this order.
@@ -784,14 +784,14 @@ class attentive_state_space_model:
                 
         
         # Save model
-        saver.save(sess, "./mlaimRNN_model") 
+        # saver.save(sess, "./mlaimRNN_model") 
         
-        if os.path.exists("attentive_state_space"):
+        # if os.path.exists("attentive_state_space"):
             
-            shutil.rmtree("attentive_state_space")
+        #     shutil.rmtree("attentive_state_space")
         
-        tf.saved_model.simple_save(sess, export_dir='attentive_state_space', inputs={"myInput": self.observation}, 
-                                   outputs={"myOutput": self.predicted})    
+        # tf.saved_model.simple_save(sess, export_dir='attentive_state_space', inputs={"myInput": self.observation}, 
+        #                            outputs={"myOutput": self.predicted})    
         
            
 

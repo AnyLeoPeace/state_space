@@ -25,7 +25,7 @@ class TranModel():
         self.dropout = dropout
         self.n_head = n_head
 
-    def build_transformer_model(self, class_weights, confidence_penalty_weight = 0.1):
+    def build_transformer_model(self, class_weights = np.array([1,1,1]).reshape(-1,1), confidence_penalty_weight = 0.1):
         class_weights = tf.convert_to_tensor(class_weights, dtype='float32')
         
         # Input

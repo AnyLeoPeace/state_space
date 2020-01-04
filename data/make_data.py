@@ -176,3 +176,78 @@ def generate_trajectory_new(num_states=3,
         X_.append(np.array(X_new))
      
     return X_, S_ , time_   
+
+
+def generate_trajectory_final(num_states=3, 
+                        Num_observations=10, 
+                        Num_samples=1000, 
+                        Max_seq=20, 
+                        Min_seq=3,
+                        Max_length = 50,
+                        alpha = 1,
+                        proportion = 0.5,
+                        reverse_mode=False,
+                        P_trans = np.array([[0.9, 0.1, 0.01], 
+                                            [0.3, 0.6, 0.1], 
+                                            [0.1, 0.8, 0.1]]),
+                        P_0=[1, 0, 0],
+                        mu_=[-10, 0, 10],
+                        var_=[1, 1, 1]):
+    '''
+    Max_length: the time length
+    Proportion: the ratio between actual visits and all possible visits
+    '''
+
+    X_  = []
+    S_  = []
+    time_ = []
+    total_visit = 0
+
+    # All visit positions
+    num_pos = Max_length * Num_samples
+    pos_ = random.sample(list(np.arange(num_pos)), int(num_pos) * proportion)
+    mask_ = np.zeros(num_pos, bool)
+    mask_[pos_] = True
+    mask_ = mask_.reshape((Num_samples, Max_length))
+
+    
+    for k in range(Num_samples):
+    
+        seq_mask = mask_[k]
+        seq_mask[0] = True
+        time = np.where(seq_mask)[0]
+
+        while len(time) < Min_seq:
+            time = np.unique(list(time) + [np.random.randint(1, Max_length)])
+        
+        while len(time) > Max_seq:
+            time = time[:-1]
+
+        S_new   = []
+        X_new   = []
+    
+        for u in range(Max_length):
+        
+            if u == 0:
+            
+                S_new.append(np.random.choice(num_states, 1, p=P_0)[0])
+            
+            else:
+
+                weights_    = get_attention_weights(u + 1, alpha, reverse_mode)            
+                P_trans_new = np.sum(np.array([P_trans[S_new[m], :] * weights_[m] for m in range(len(S_new))]), axis=0)
+                P_trans_new = P_trans_new/np.sum(P_trans_new)
+            
+                S_new.append(np.random.choice(num_states, 1, p=P_trans_new)[0])
+            
+            X_new.append((mu_[S_new[-1]] + var_[S_new[-1]] * np.random.normal(0, 1, (1, Num_observations))).reshape(-1,))
+            
+
+        S_.append(np.array(S_new)[time])
+        X_.append(np.array(X_new)[time])
+        time_.append(time)
+        total_visit += len(time)
+
+     
+    return X_, S_ , time_, total_visit
+

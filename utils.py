@@ -3,7 +3,7 @@ from keras.layers import Layer
 # from tensorflow.python.ops.parallel_for.gradients import jacobian
 import tensorflow as tf
 import numpy as np
-
+from scipy.spatial import distance_matrix
 
 def padd_data(X, padd_length):
     
@@ -35,9 +35,19 @@ def padd_data(X, padd_length):
     return X_padded
 
 
-def label_exchange(a,b, seq):
-    ma = seq == a
-    mb = seq == b
-    seq[ma] = b
-    seq[mb] = a
-    return seq
+def label_exchange(labels, preds, labels_mean, preds_mean, num_states = 3):
+    '''
+    Input the labels sequence and the pred sequence
+    Exchange the labels alignment to maximize the acc
+    '''
+    dis = distance_matrix(labels_mean.mean(axis=-1), preds_mean.mean(axis=-1))
+    pos_a,pos_b = np.where(abs(dis) < 2)
+    new_labels = np.copy(labels)
+
+    for i in range(num_states):
+        a = pos_a[i]
+        b = pos_b[i]
+        ma = labels == a
+        new_labels[ma] = b
+
+    return new_labels

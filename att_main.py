@@ -59,8 +59,6 @@ X_time_eval = data_eval['time']
 
 state_inference, expected_observations, attention = model.predict(X_observations_eval) # Here states has delay
 
-corr = 0
-l = 0
 all_true = []
 all_seq = []
 seqs = []
@@ -69,7 +67,6 @@ for index, item in enumerate(state_inference):
     seqs.append(seq)
     all_true = all_true + list(true_states_eval[index][1:]) # delay
     all_seq = all_seq + list(seq[:-1]) # no last one
-    l += len(seq)
 
 all_true = np.array(all_true)
 all_seq = np.array(all_seq)

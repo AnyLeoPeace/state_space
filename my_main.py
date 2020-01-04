@@ -1,7 +1,6 @@
 ### Setting up the experiment 
-from data.make_data import generate_trajectory_new, generate_trajectory
-# from keras import optimizers, losses
-# import keras.backend as K
+
+from data.make_data import *
 import numpy as np
 from utils import *
 import os
@@ -14,10 +13,10 @@ from keras.utils import np_utils
 os.environ['CUDA_VISIBLE_DEVICES'] = '1' 
 
 '''Generate data'''
-max_seq = 15
-min_seq = 5
+max_seq = 20
+min_seq = 10
 max_length = 30
-alpha = 100
+alpha = 500
 
 X_observations, true_states, X_time = generate_trajectory_new(num_states=3, 
                                                     Num_observations=10, 
@@ -31,7 +30,7 @@ X_observations, true_states, X_time = generate_trajectory_new(num_states=3,
                                                                         [0, 0.2, 0.8]]),
                                                     reverse_mode=False)
 
-np.save('./data/syn_data_eval' + str(max_seq) + '_'  + str(min_seq) + '_' + str(max_length) + '_' + str(alpha),{'X':X_observations, 'states':true_states, 'time':X_time})
+np.save('./data/syn_data_' + str(max_seq) + '_'  + str(min_seq) + '_' + str(max_length) + '_' + str(alpha),{'X':X_observations, 'states':true_states, 'time':X_time})
 
 
 data = np.load('./data/syn_data_' + str(max_seq) + '_'  + str(min_seq) + '_' + str(max_length) + '_' + str(alpha) + '.npy', allow_pickle = True).item()
