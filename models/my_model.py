@@ -34,7 +34,7 @@ class TranModel():
         input_time = Input(shape=(self.len_limit, ))
         input_states = Input(shape=(self.len_limit, self.num_states), dtype='int32')
         input_predict_mask = Input(shape=(self.len_limit, ), dtype='bool') # Where to predict
-        seq_mask = Lambda(lambda x:tf.cast(tf.reduce_any(K.not_equal(x, 0), axis=-1), 'bool'), name = 'seq_mask')(input_seq)
+        # seq_mask = Lambda(lambda x:tf.cast(tf.reduce_any(K.not_equal(x, 0), axis=-1), 'bool'), name = 'seq_mask')(input_seq)
 
         # Embedding
         embed_layer = TimeDistributed(Dense(self.d_model,name = 'emb_dense'))
@@ -51,10 +51,6 @@ class TranModel():
 
         unk_convert_layer = Lambda(convert)
 
-        def inverse_norm(x):
-            return (x * self.normalizer.scale_) + (x * self.normalizer.mean_)
-
-        
         # Output
         output_softmax_layer = Softmax(name='prediction')
         dense_layer = TimeDistributed(Dense(self.num_states,name = 'dense'))
@@ -107,8 +103,7 @@ class TranModel():
 
         self.model = model
         return model
-
-
+        
     def initialize_hidden_states(self, X):
         
         self.init_states = GaussianMixture(n_components=self.num_states, 

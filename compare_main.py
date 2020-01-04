@@ -35,7 +35,7 @@ train_epoch = 100
 verbose = False
 
 '''Generate data'''
-def generate_data_mode_1(max_seq = 25, min_seq = 5, max_length = 30, alpha = 100, proportion = 0.5):
+def generate_data_mode_1(max_seq = 25, min_seq = 5, max_length = 30, alpha = 100, proportion = 0.5, personalized = 0):
 
     X_observations, true_states, X_time, total_visit = generate_trajectory_final(num_states=3, 
                                                         Num_observations=10, 
@@ -45,6 +45,7 @@ def generate_data_mode_1(max_seq = 25, min_seq = 5, max_length = 30, alpha = 100
                                                         Max_length=max_length,
                                                         alpha=alpha,
                                                         proportion = proportion,
+                                                        personalized = personalized,
                                                         P_trans = np.array([[0.85, 0.1, 0.05], 
                                                                             [0.1, 0.7, 0.2], 
                                                                             [0, 0.2, 0.8]]),
@@ -140,8 +141,11 @@ def train_evaluate_my_model(train_data, eval_data, save = None):
     train_X, train_time, train_states, train_masks = get_train_data(X_padded, states_padded, X_time, trans.len_limit, trans.time_limit)
     eval_X, eval_time, eval_states, eval_masks = get_train_data(X_padded_eval, states_padded_eval, X_time_eval, trans.len_limit, trans.time_limit)
 
-    lens = (X_padded[:,:].mean(axis=-1) != 0).sum(axis=-1)
-    eval_lens = (X_padded_eval[:,:].mean(axis=-1) != 0).sum(axis=-1)
+    train_his_mask = X_padded[:,:].mean(axis=-1) != 0
+    lens = train_his_mask.sum(axis=-1)
+
+    eval_his_mask = X_padded_eval[:,:].mean(axis=-1) != 0
+    eval_lens = eval_his_mask.sum(axis=-1)
 
     # Train
     his = trans.model.fit([train_X, train_time, train_states, train_masks], batch_size=100, epochs=train_epoch, verbose=verbose)
@@ -187,6 +191,26 @@ def train_evaluate_my_model(train_data, eval_data, save = None):
 
         return lks
 
+    def evaluate_likelyhood_with_personalization(all_seq):
+        # A simplified personalized effect
+        # The predicted dif is the average of history dif
+        
+        history_mu = np.take(trans.state_means, eval_states) * eval_his_mask
+        history_dif_ = eval_X - history_mu
+        history_dif = history_dif_.sum(axis=1) / eval_his_mask.sum(axis=1)
+        pred_dif = history_dif
+
+        X_ = padd_data(X_observations_eval, trans.len_limit)[:,1:]
+        X_ = X_ - np.repeat(pred_dif, axis = 1, repeats = trans.len_limit)
+        X_ = X_.reshape(-1, 10)
+
+        pred = np_utils.to_categorical(all_seq, num_classes= trans.num_states)
+
+        lks_  = np.array([multivariate_normal.logpdf(X_, trans.state_means[k], trans.state_covars[k]).reshape((-1,1)) * pred[:,k].reshape((-1,1)) for k in range(trans.num_states)])
+        lks = np.mean(lks_)
+
+        return lks
+
 
     all_true, all_seq = get_eval_preds()
     all_true_ = label_exchange(all_true, all_seq, data_mean, trans.state_means.mean(axis=-1))
@@ -202,6 +226,7 @@ def train_evaluate_my_model(train_data, eval_data, save = None):
     logging.info('')
 
     return acc, f1, lks
+
 
 
 

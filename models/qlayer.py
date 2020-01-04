@@ -1,6 +1,8 @@
 '''
 Code for paper: DEFENSIVE QUANTIZATION LAYER FOR CONVOLUTIONAL NETWORKS AGAINST ADVERSARIAL ATTACK.
 By: Sirui Song et.al.
+
+Not used in this branch
 '''
 
 import tensorflow as tf
