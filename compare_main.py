@@ -287,7 +287,7 @@ def main():
     os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-    for proportion in range(1,9):
+    for proportion in range(6,9):
         proportion = proportion / 10
 
         train_data = generate_data_mode_1(proportion=proportion)

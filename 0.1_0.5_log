@@ -1,0 +1,331 @@
+Begining Comparing
+****************************************
+Design proportion : 0.1000
+Train proportion : 0.1747
+Test proportion : 0.1756
+
+Compare Iteration 1--------------------
+
+Transformer Model
+Acc : 0.5196
+F1 Score : 0.5040
+Log likelyhood : -296.8858
+
+Attentive Model
+Acc : 0.4647
+F1 Score : 0.4158
+Log likelyhood : -515.5880
+
+Compare Iteration 2--------------------
+
+Transformer Model
+Acc : 0.5221
+F1 Score : 0.4531
+Log likelyhood : -282.1361
+
+Attentive Model
+Acc : 0.2385
+F1 Score : 0.2242
+Log likelyhood : -540.1222
+
+Compare Iteration 3--------------------
+
+Transformer Model
+Acc : 0.5172
+F1 Score : 0.4774
+Log likelyhood : -258.0306
+
+Attentive Model
+Acc : 0.2385
+F1 Score : 0.2242
+Log likelyhood : -540.1222
+
+Compare Iteration 4--------------------
+
+Transformer Model
+Acc : 0.5245
+F1 Score : 0.4632
+Log likelyhood : -354.9873
+
+Attentive Model
+Acc : 0.2385
+F1 Score : 0.2242
+Log likelyhood : -540.1222
+
+Compare Iteration 5--------------------
+
+Transformer Model
+Acc : 0.5132
+F1 Score : 0.4690
+Log likelyhood : -252.8092
+
+Attentive Model
+Acc : 0.2385
+F1 Score : 0.2242
+Log likelyhood : -540.1222
+
+****************************************
+****************************************
+Design proportion : 0.2000
+Train proportion : 0.2334
+Test proportion : 0.2346
+
+Compare Iteration 1--------------------
+
+Transformer Model
+Acc : 0.5665
+F1 Score : 0.5480
+Log likelyhood : -290.6142
+
+Attentive Model
+Acc : 0.2325
+F1 Score : 0.2301
+Log likelyhood : -520.3226
+
+Compare Iteration 2--------------------
+
+Transformer Model
+Acc : 0.5642
+F1 Score : 0.5437
+Log likelyhood : -254.4689
+
+Attentive Model
+Acc : 0.4532
+F1 Score : 0.4213
+Log likelyhood : -451.3286
+
+Compare Iteration 3--------------------
+
+Transformer Model
+Acc : 0.5623
+F1 Score : 0.5462
+Log likelyhood : -320.2778
+
+Attentive Model
+Acc : 0.2325
+F1 Score : 0.2301
+Log likelyhood : -520.3226
+
+Compare Iteration 4--------------------
+
+Transformer Model
+Acc : 0.5615
+F1 Score : 0.5431
+Log likelyhood : -322.2933
+
+Attentive Model
+Acc : 0.2325
+F1 Score : 0.2301
+Log likelyhood : -520.3226
+
+Compare Iteration 5--------------------
+
+Transformer Model
+Acc : 0.5632
+F1 Score : 0.5551
+Log likelyhood : -273.4635
+
+Attentive Model
+Acc : 0.4532
+F1 Score : 0.4213
+Log likelyhood : -451.3286
+
+****************************************
+****************************************
+Design proportion : 0.3000
+Train proportion : 0.3239
+Test proportion : 0.3236
+
+Compare Iteration 1--------------------
+
+Transformer Model
+Acc : 0.6046
+F1 Score : 0.5820
+Log likelyhood : -266.7420
+
+Attentive Model
+Acc : 0.4854
+F1 Score : 0.4508
+Log likelyhood : -358.6505
+
+Compare Iteration 2--------------------
+
+Transformer Model
+Acc : 0.6086
+F1 Score : 0.5943
+Log likelyhood : -262.0661
+
+Attentive Model
+Acc : 0.4854
+F1 Score : 0.4508
+Log likelyhood : -358.6505
+
+Compare Iteration 3--------------------
+
+Transformer Model
+Acc : 0.6128
+F1 Score : 0.5945
+Log likelyhood : -222.9934
+
+Attentive Model
+Acc : 0.2126
+F1 Score : 0.2168
+Log likelyhood : -501.4769
+
+Compare Iteration 4--------------------
+
+Transformer Model
+Acc : 0.6033
+F1 Score : 0.5898
+Log likelyhood : -221.3573
+
+Attentive Model
+Acc : 0.2126
+F1 Score : 0.2168
+Log likelyhood : -501.4769
+
+Compare Iteration 5--------------------
+
+Transformer Model
+Acc : 0.6000
+F1 Score : 0.5871
+Log likelyhood : -244.5177
+
+Attentive Model
+Acc : 0.5479
+F1 Score : 0.5254
+Log likelyhood : -348.1531
+
+****************************************
+****************************************
+Design proportion : 0.4000
+Train proportion : 0.4193
+Test proportion : 0.4189
+
+Compare Iteration 1--------------------
+
+Transformer Model
+Acc : 0.6527
+F1 Score : 0.6450
+Log likelyhood : -208.0325
+
+Attentive Model
+Acc : 0.4640
+F1 Score : 0.4358
+Log likelyhood : -307.8404
+
+Compare Iteration 2--------------------
+
+Transformer Model
+Acc : 0.6603
+F1 Score : 0.6494
+Log likelyhood : -200.1694
+
+Attentive Model
+Acc : 0.1904
+F1 Score : 0.1940
+Log likelyhood : -480.5971
+
+Compare Iteration 3--------------------
+
+Transformer Model
+Acc : 0.6610
+F1 Score : 0.6512
+Log likelyhood : -200.8182
+
+Attentive Model
+Acc : 0.1904
+F1 Score : 0.1940
+Log likelyhood : -480.5971
+
+Compare Iteration 4--------------------
+
+Transformer Model
+Acc : 0.6537
+F1 Score : 0.6426
+Log likelyhood : -195.9390
+
+Attentive Model
+Acc : 0.1904
+F1 Score : 0.1940
+Log likelyhood : -480.5971
+
+Compare Iteration 5--------------------
+
+Transformer Model
+Acc : 0.6560
+F1 Score : 0.6459
+Log likelyhood : -215.6480
+
+Attentive Model
+Acc : 0.1904
+F1 Score : 0.1940
+Log likelyhood : -480.5971
+
+****************************************
+****************************************
+Design proportion : 0.5000
+Train proportion : 0.5166
+Test proportion : 0.5166
+
+Compare Iteration 1--------------------
+
+Transformer Model
+Acc : 0.6901
+F1 Score : 0.6827
+Log likelyhood : -169.3140
+
+Attentive Model
+Acc : 0.4791
+F1 Score : 0.4535
+Log likelyhood : -259.5516
+
+Compare Iteration 2--------------------
+
+Transformer Model
+Acc : 0.6794
+F1 Score : 0.6698
+Log likelyhood : -207.2540
+
+Attentive Model
+Acc : 0.4791
+F1 Score : 0.4535
+Log likelyhood : -259.5516
+
+Compare Iteration 3--------------------
+
+Transformer Model
+Acc : 0.6782
+F1 Score : 0.6684
+Log likelyhood : -176.3159
+
+Attentive Model
+Acc : 0.1811
+F1 Score : 0.1848
+Log likelyhood : -472.9741
+
+Compare Iteration 4--------------------
+
+Transformer Model
+Acc : 0.6790
+F1 Score : 0.6695
+Log likelyhood : -182.4336
+
+Attentive Model
+Acc : 0.4791
+F1 Score : 0.4535
+Log likelyhood : -259.5516
+
+Compare Iteration 5--------------------
+
+Transformer Model
+Acc : 0.6868
+F1 Score : 0.6786
+Log likelyhood : -162.9925
+
+Attentive Model
+Acc : 0.1811
+F1 Score : 0.1848
+Log likelyhood : -472.9741
+
+****************************************

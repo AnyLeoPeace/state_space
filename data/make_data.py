@@ -222,8 +222,8 @@ def generate_trajectory_final(num_states=3,
         while len(time) < Min_seq:
             time = np.unique(list(time) + [np.random.randint(1, Max_length)])
         
-        while len(time) > Max_seq:
-            bad = random.sample(time,1)
+        while len(time) >= Max_seq:
+            bad = random.sample(list(time),1)
             seq_mask[bad] = False
             seq_mask[0] = True
             time = np.where(seq_mask)[0]
