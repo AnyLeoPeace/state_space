@@ -1,6 +1,16 @@
 ### Setting up the experiment
 import tensorflow as tf
+import os
+from keras.backend.tensorflow_backend import set_session
+
+os.environ['CUDA_VISIBLE_DEVICES'] = '1' 
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
 tf.logging.set_verbosity(tf.logging.ERROR)
+
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+set_session(tf.Session(config=config))
 
 from data.make_data import *
 import numpy as np
@@ -13,14 +23,14 @@ from scipy.stats import multivariate_normal
 from keras.utils import np_utils
 
 import logging
+import time
 
-# tf.logging.set_verbosity(tf.logging.ERROR)
-# tf.get_logger().setLevel('INFO')
+localtime = time.asctime( time.localtime(time.time()) )
 
 logging.basicConfig(level=logging.DEBUG,
                 format='%(asctime)s %(message)s',
                 datefmt='%a, %d %b %Y %H:%M:%S',
-                filename='log',
+                filename= localtime + '_log',
                 filemode='w')
 
 
@@ -31,11 +41,12 @@ console.setFormatter(formatter)
 logging.getLogger('').addHandler(console)
 
 data_mean = np.array([-10,0,10])
-train_epoch = 100
+train_epoch = [100,100]
 verbose = False
 
+
 '''Generate data'''
-def generate_data_mode_1(max_seq = 25, min_seq = 5, max_length = 30, alpha = 100, proportion = 0.5, personalized = 0):
+def generate_data_mode_1(max_seq = 25, min_seq = 5, max_length = 50, alpha = 100, proportion = 0.5, personalized = 0):
 
     X_observations, true_states, X_time, total_visit = generate_trajectory_final(num_states=3, 
                                                         Num_observations=10, 
@@ -120,7 +131,7 @@ def get_train_data(X_padded, states_padded, X_time, len_limit = 25, time_limit =
 
 
 
-def train_evaluate_my_model(train_data, eval_data, save = None):
+def train_evaluate_my_model(train_data, eval_data, save = None, personalized = False, time_limit=30, len_limit=25):
     '''
     Input data directly comes from generate_data_final
     '''
@@ -148,7 +159,7 @@ def train_evaluate_my_model(train_data, eval_data, save = None):
     eval_lens = eval_his_mask.sum(axis=-1)
 
     # Train
-    his = trans.model.fit([train_X, train_time, train_states, train_masks], batch_size=100, epochs=train_epoch, verbose=verbose)
+    his = trans.model.fit([train_X, train_time, train_states, train_masks], batch_size=100, epochs=train_epoch[0], verbose=verbose)
 
     if save is not None:
         trans.model.save_weights(save + 'my_model_weights.ckpt')
@@ -194,15 +205,27 @@ def train_evaluate_my_model(train_data, eval_data, save = None):
     def evaluate_likelyhood_with_personalization(all_seq):
         # A simplified personalized effect
         # The predicted dif is the average of history dif
+        # Not completed
+        eval_X_ = trans.normalizer.inverse_transform(eval_X)
         
-        history_mu = np.take(trans.state_means, eval_states) * eval_his_mask
+        history_mu = np.take(trans.state_means, np.argmax(eval_states, axis=-1), axis=0) * np.expand_dims(eval_states.mean(axis= -1) != 0, axis=-1)
         history_dif_ = eval_X - history_mu
-        history_dif = history_dif_.sum(axis=1) / eval_his_mask.sum(axis=1)
-        pred_dif = history_dif
+        history_dif = history_dif_.sum(axis=1) / np.expand_dims((eval_X.mean(axis=-1) !=0).sum(axis=1), axis = -1)
 
+        # remove the last prediction
+        pred_dif = []
+        for index, item in enumerate(history_dif): 
+            l = int(eval_states[index].sum(axis = -1).sum())
+            current_l = (eval_X[index].mean(-1) != 0).sum()
+            if current_l < l:
+                # This is not the last postion in the sequence
+                pred_dif.append(item)
+
+        pred_dif = np.array(pred_dif)
         X_ = padd_data(X_observations_eval, trans.len_limit)[:,1:]
-        X_ = X_ - np.repeat(pred_dif, axis = 1, repeats = trans.len_limit)
-        X_ = X_.reshape(-1, 10)
+        mask = X_.mean(axis=-1) != 0
+        X_ = X_[mask]
+        X_ = X_ - pred_dif
 
         pred = np_utils.to_categorical(all_seq, num_classes= trans.num_states)
 
@@ -219,18 +242,30 @@ def train_evaluate_my_model(train_data, eval_data, save = None):
     f1 = f1_score(all_true_, all_seq, average='macro')
     lks = evaluate_likelyhood(all_seq)
 
+    if personalized:
+        lks_p = evaluate_likelyhood_with_personalization(all_seq)
+
     logging.info('Transformer Model')
     logging.info('Acc : %2.4f'% acc)
     logging.info('F1 Score : %2.4f'% f1)
     logging.info('Log likelyhood : %2.4f'%lks)
-    logging.info('')
 
-    return acc, f1, lks
+    if personalized:
+        logging.info('Log likelyhood with personalization: %2.4f'%lks_p)
+        logging.info('')
+
+        return acc, f1, lks, lks_p
+    
+    else:
+        logging.info('')
+
+        return acc, f1, lks
 
 
 
 
-def train_evaluate_att_model(train_data, eval_data):
+
+def train_evaluate_att_model(train_data, eval_data, len_limit = 25):
 
 
     # Get data
@@ -239,19 +274,19 @@ def train_evaluate_att_model(train_data, eval_data):
 
     # Get model
     model = attentive_state_space_model(num_states=3,
-                                maximum_seq_length=25, 
+                                maximum_seq_length=len_limit, 
                                 input_dim=10, 
                                 rnn_type='LSTM',
                                 latent=True,
                                 generative=True,
-                                num_iterations=50, 
-                                num_epochs=train_epoch, 
+                                num_iterations=50, # Not used
+                                num_epochs=train_epoch[1], 
                                 batch_size=100, 
                                 learning_rate=1e-3, 
-                                num_rnn_hidden=100, 
+                                num_rnn_hidden=16, # Keep the same with the transformer model
                                 num_rnn_layers=1,
-                                dropout_keep_prob=None,
-                                num_out_hidden=100, 
+                                dropout_keep_prob=0.1,
+                                num_out_hidden=16, 
                                 num_out_layers=1,
                                 verbosity = verbose)
 
@@ -309,16 +344,18 @@ def main():
 
     logging.info('Begining Comparing')
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0' 
-    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+    data_config = {
+        'max_length':50,
+        'min_seq':5,
+        'max_seq':25,
+    }
 
-    for proportion in range(6,9):
-        proportion = proportion / 10
+    for proportion in [0.1, 0.15, 0.2, 0.25, 0.3, 0.35]:
 
-        train_data = generate_data_mode_1(proportion=proportion)
-        eval_data = generate_data_mode_1(proportion=proportion)
+        train_data = generate_data_mode_1(proportion=proportion, max_length=data_config['max_length'], min_seq=data_config['min_seq'], max_seq=data_config['max_seq'])
+        eval_data = generate_data_mode_1(proportion=proportion, max_length=data_config['max_length'], min_seq=data_config['min_seq'], max_seq=data_config['max_seq'])
 
-        total = 30*1000
+        total = data_config['max_length']*1000
 
         logging.info('*'*40)
         logging.info('Design proportion : %2.4f'% proportion)
@@ -326,15 +363,15 @@ def main():
         logging.info('Test proportion : %2.4f'% (eval_data[-1] / total))
         logging.info('')
 
-        for i in range(5):
+        for i in range(8):
 
             logging.info('Compare Iteration %d' % (i+1)+'-'*20)
             logging.info('')
 
-            trans_scores = train_evaluate_my_model(train_data, eval_data)
-            att_scores = train_evaluate_att_model(train_data, eval_data)
+            trans_scores = train_evaluate_my_model(train_data, eval_data, personalized=False, time_limit=data_config['max_length'], len_limit = data_config['max_seq'])
+            att_scores = train_evaluate_att_model(train_data, eval_data, len_limit = data_config['max_seq'])
 
-            np.save('./results/proportion_' + str(proportion) + '_iteration_'+str(i),{'trans':trans_scores, 'att':att_scores})
+            np.save('./results/proportion_' + str(proportion) + '_iteration_'+str(i),{'trans':trans_scores, 'att':att_scores, 'proportion':(train_data[-1] / total, eval_data[-1] / total)})
         
         logging.info('*'*40)
 
